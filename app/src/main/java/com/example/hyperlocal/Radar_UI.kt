@@ -1,46 +1,70 @@
-package com.example.hyperlocal
-
-import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.util.AttributeSet
-import android.view.View
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
+import com.example.hyperlocal.MatchResult
 
-class RadarView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null
-) : View(context, attrs) {
 
-    private val paint = Paint()
-    private val matches = mutableListOf<MatchResult>()
+@Composable
+fun RadarCanvas(matches: List<MatchResult>) {
+    val centerX = 200f
+    val centerY = 200f
+    val spacing = 50f
 
-    fun updateMatches(newMatches: List<MatchResult>) {
-        matches.clear()
-        matches.addAll(newMatches)
-        invalidate()
+    // Radar sweep animation state
+    val sweepRadius = remember { Animatable(0f) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            sweepRadius.snapTo(0f)
+            sweepRadius.animateTo(
+                targetValue = 300f,
+                animationSpec = tween(durationMillis = 1500, easing = LinearEasing)
+            )
+        }
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val centerX = width / 2f
-        val centerY = height / 2f
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(400.dp)
+            .background(Color.Black)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // Radar sweep
+            drawCircle(
+                color = Color(0x33FFFFFF), // translucent white
+                radius = sweepRadius.value,
+                center = Offset(centerX, centerY)
+            )
 
-        val spacing = 50f
-        matches.forEachIndexed { index, match ->
-            paint.color = when (match.colorCode) {
-                "Green" -> Color.GREEN
-                "Yellow" -> Color.YELLOW
-                else -> Color.GRAY
+            // Match dots
+            matches.forEachIndexed { index, match ->
+                val angle = Math.toRadians((index * 360.0 / matches.size))
+                val radius = spacing * (index + 1)
+                val x = centerX + radius * cos(angle).toFloat()
+                val y = centerY + radius * sin(angle).toFloat()
+                val color = when (match.colorCode) {
+                    "Green" -> Color.Green
+                    "Yellow" -> Color.Yellow
+                    else -> Color.Gray
+                }
+                drawCircle(color = color, radius = 20f, center = Offset(x, y))
             }
-
-            val angle = Math.toRadians((index * 360.0 / matches.size))
-            val radius = spacing * (index + 1)
-            val x = (centerX + radius * cos(angle)).toFloat()
-            val y = (centerY + radius * sin(angle)).toFloat()
-
-            canvas.drawCircle(x, y, 20f, paint)
         }
     }
 }
