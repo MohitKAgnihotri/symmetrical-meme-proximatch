@@ -20,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hyperlocal.InterestManager
 import com.example.hyperlocal.MainViewModel
 import com.example.hyperlocal.MatchResult
+import com.example.hyperlocal.RadarCanvas
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
