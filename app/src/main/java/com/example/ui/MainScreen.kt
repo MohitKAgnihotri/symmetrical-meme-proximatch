@@ -1,14 +1,23 @@
+// MainScreen.kt
 package com.example.hyperlocal.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,20 +29,32 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hyperlocal.InterestManager
 import com.example.hyperlocal.MainViewModel
 import com.example.hyperlocal.MatchResult
-
+import com.example.hyperlocal.ui.RadarCanvas
+import com.example.hyperlocal.ui.ThemeProvider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel = viewModel()) {
+fun MainScreen(
+    viewModel: MainViewModel = viewModel()
+) {
     val context = LocalContext.current
+
+    // Observe the list of matches and the selected theme
     val matches by viewModel.matchResults.collectAsState()
-    var selected by remember { mutableStateOf<MatchResult?>(null) }
+    val theme by viewModel.selectedTheme.collectAsState()
+
+    // State for the tapped dot
+    var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("ProxiMatch Radar") }) },
+        topBar = {
+            TopAppBar(title = { Text("ProxiMatch Radar") })
+        },
         bottomBar = {
             Row(
-                Modifier.padding(12.dp).fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 Button(onClick = {
@@ -43,38 +64,64 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     } else {
                         Toast.makeText(context, "Missing permissions", Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("Start") }
-
+                }) {
+                    Text("Start")
+                }
                 Button(onClick = {
                     viewModel.stop()
                     Toast.makeText(context, "Stopped", Toast.LENGTH_SHORT).show()
-                }) { Text("Stop") }
+                }) {
+                    Text("Stop")
+                }
             }
         }
-    ) { padding ->
+    ) { paddingValues ->
         Column(
-            modifier = Modifier.padding(padding).padding(8.dp).fillMaxSize()
+            modifier = Modifier
+                .padding(paddingValues)
+                .padding(horizontal = 8.dp, vertical = 12.dp)
+                .fillMaxSize()
         ) {
-            RadarCanvas(matches = matches, onDotTapped = { selected = it })
-            Spacer(Modifier.height(16.dp))
+            // Radar canvas with theming and tap handling
+            RadarCanvas(
+                theme = theme,
+                matches = matches,
+                onDotTapped = { tapped ->
+                    selectedMatch = tapped
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // List of matches below
             MatchListUI(matches)
         }
 
-        selected?.let { match ->
+        // Dialog when a dot is tapped
+        selectedMatch?.let { match ->
             AlertDialog(
-                onDismissRequest = { selected = null },
+                onDismissRequest = { selectedMatch = null },
+                title = { Text("Send Interest?") },
+                text = { Text("This user won't know unless they also send interest to you.") },
                 confirmButton = {
                     TextButton(onClick = {
                         InterestManager.saveInterest(context, match.id)
                         Toast.makeText(context, "Interest sent", Toast.LENGTH_SHORT).show()
-                        selected = null
-                    }) { Text("Send") }
+                        selectedMatch = null
+                    }) {
+                        Text("Send")
+                    }
                 },
                 dismissButton = {
-                    TextButton(onClick = { selected = null }) { Text("Cancel") }
-                },
-                title = { Text("Send Interest?") },
-                text = { Text("This user won't know unless they also send interest to you.") }
+                    TextButton(onClick = {
+                        selectedMatch = null
+                    }) {
+                        Text("Cancel")
+                    }
+                }
             )
         }
     }
@@ -84,22 +131,32 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 fun MatchListUI(matches: List<MatchResult>) {
     LazyColumn {
         items(matches) { match ->
-            Card(modifier = Modifier.padding(4.dp).fillMaxWidth()) {
+            Card(
+                modifier = Modifier
+                    .padding(vertical = 4.dp)
+                    .fillMaxWidth()
+            ) {
                 Row(
-                    Modifier.padding(8.dp),
+                    modifier = Modifier
+                        .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        modifier = Modifier.size(16.dp).background(
-                            when (match.colorCode) {
-                                "Green" -> Color.Green
-                                "Yellow" -> Color.Yellow
-                                else -> Color.Gray
-                            }
-                        )
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(
+                                when (match.colorCode) {
+                                    "Green" -> Color.Green
+                                    "Yellow" -> Color.Yellow
+                                    else     -> Color.Gray
+                                }
+                            )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Match: ${match.matchPercentage}%", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = "Match: ${match.matchPercentage}%",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
             }
         }
@@ -107,13 +164,13 @@ fun MatchListUI(matches: List<MatchResult>) {
 }
 
 fun checkBLEPermissions(context: Context): Boolean {
-    val perms = listOf(
+    val required = listOf(
         Manifest.permission.BLUETOOTH_ADVERTISE,
         Manifest.permission.BLUETOOTH_SCAN,
         Manifest.permission.BLUETOOTH_CONNECT,
         Manifest.permission.ACCESS_FINE_LOCATION
     )
-    return perms.all {
-        ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    return required.all { perm ->
+        ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
     }
 }
