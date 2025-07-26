@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.HyperLocal" parent="android:Theme.DeviceDefault" />
+</resources>
