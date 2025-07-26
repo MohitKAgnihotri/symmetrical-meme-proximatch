@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.hyperlocal"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.hyperlocal"
@@ -44,31 +44,32 @@ android {
 
 dependencies {
     // Jetpack Compose BOM
-    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    //implementation(platform(libs.androidx.compose.bom.v20231001))
 
     // Compose UI
-    implementation("androidx.activity:activity-compose:1.7.2")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3:1.1.2")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.ui.tooling.preview)
+    debugImplementation(libs.androidx.ui.tooling)
 
     // Lifecycle + ViewModel
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // Coroutines and Flow
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("com.google.accompanist:accompanist-systemuicontroller:0.30.1")
-    implementation("androidx.navigation:navigation-compose:2.7.3")
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.accompanist.systemuicontroller)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.core.ktx.v1120)
 
 
     // BLE (already part of Android SDK)
 
     // Optional testing
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01"))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit.v121)
+    androidTestImplementation(libs.androidx.espresso.core.v361)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
 }

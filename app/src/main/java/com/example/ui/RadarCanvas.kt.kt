@@ -73,10 +73,11 @@ fun RadarCanvas(matches: List<MatchResult>, onDotTapped: (MatchResult) -> Unit) 
                 center = center
             )
 
-            // Plot matches
+            // Plot matches using RSSI if available
             matches.forEachIndexed { index, match ->
                 val angle = Math.toRadians((index * 360.0 / matches.size))
-                val radius = (match.matchPercentage.coerceIn(10, 100) / 100f) * (size.minDimension / 2.2f)
+                val rssiNormalized = ((127 + (match.rssi ?: -100)).coerceIn(20, 100)) / 100f
+                val radius = rssiNormalized * (size.minDimension / 2.2f)
                 val x = center.x + radius * cos(angle).toFloat()
                 val y = center.y + radius * sin(angle).toFloat()
                 val color = when (match.colorCode) {
@@ -97,7 +98,8 @@ fun RadarCanvas(matches: List<MatchResult>, onDotTapped: (MatchResult) -> Unit) 
         // Tappable dots (if any)
         matches.forEachIndexed { index, match ->
             val angle = Math.toRadians((index * 360.0 / matches.size))
-            val radius = (match.matchPercentage.coerceIn(10, 100) / 100f) * 180f
+            val rssiNormalized = ((127 + (match.rssi ?: -100)).coerceIn(20, 100)) / 100f
+            val radius = rssiNormalized * 180f
             val x = radius * cos(angle).toFloat()
             val y = radius * sin(angle).toFloat()
             Box(
