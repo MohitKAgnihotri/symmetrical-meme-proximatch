@@ -1,126 +1,157 @@
-package com.example.hyperlocal
+package com.example.hyperlocal.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlin.math.*
+import com.example.hyperlocal.MatchResult
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 @Composable
-fun RadarCanvas(matches: List<MatchResult>, onDotTapped: (MatchResult) -> Unit) {
-    val sweepRadius = remember { androidx.compose.animation.core.Animatable(0f) }
-
-    val pulseAnim = androidx.compose.animation.core.rememberInfiniteTransition()
-    val pulseAlpha by pulseAnim.animateFloat(
+fun RadarCanvas(
+    matches: List<MatchResult>,
+    onDotTapped: (MatchResult) -> Unit
+) {
+    // Infinite animations
+    val sweepTransition = rememberInfiniteTransition()
+    val sweepAngle by sweepTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        )
+    )
+    val pulseTransition = rememberInfiniteTransition()
+    val pulseFactor by pulseTransition.animateFloat(
+        initialValue = 0.8f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    val loadingAlpha by pulseTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(1000, easing = androidx.compose.animation.core.LinearEasing),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
         )
     )
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            sweepRadius.snapTo(0f)
-            sweepRadius.animateTo(
-                targetValue = 400f,
-                animationSpec = androidx.compose.animation.core.tween(durationMillis = 1800, easing = androidx.compose.animation.core.LinearEasing)
-            )
-        }
-    }
-
+    val density = LocalDensity.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(400.dp)
-            .background(
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(matches) {
+                    detectTapGestures { tapOffset ->
+                        val width = size.width
+                        val height = size.height
+                        val center = Offset(width / 2f, height / 2f)
+                        val maxRadius = min(width, height) / 2f
+                        val dotRadius = 12.dp.toPx() * pulseFactor
+                        matches.forEachIndexed { index, match ->
+                            val angleRad = Math.toRadians(index * 360.0 / matches.size)
+                            val spacing = maxRadius / (matches.size + 1)
+                            val r = spacing * (index + 1)
+                            val x = center.x + (r * cos(angleRad)).toFloat()
+                            val y = center.y + (r * sin(angleRad)).toFloat()
+                            val dist = sqrt((tapOffset.x - x).let { it * it } + (tapOffset.y - y).let { it * it })
+                            if (dist <= dotRadius) onDotTapped(match)
+                        }
+                    }
+                }
+        ) {
+            val width = size.width
+            val height = size.height
+            val center = Offset(width / 2f, height / 2f)
+            val maxRadius = min(width, height) / 2f
+
+            // Background radial gradient
+            drawRect(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF2B2D42), Color(0xFF000000)),
-                    center = Offset(200f, 200f),
-                    radius = 600f
-                )
+                    colors = listOf(Color(0xFF2B2D42), Color.Black),
+                    center = center,
+                    radius = maxRadius,
+                    tileMode = TileMode.Clamp
+                ),
+                size = size
             )
 
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2, size.height / 2)
-
-            // Draw radar rings with solid low-alpha white stroke
+            // Concentric rings
             repeat(4) { i ->
                 drawCircle(
                     color = Color.White.copy(alpha = 0.2f),
-                    radius = (i + 1) * size.minDimension / 5.5f,
                     center = center,
-                    style = Stroke(width = 2f)
+                    radius = maxRadius * (i + 1) / 4f,
+                    style = Stroke(width = 2.dp.toPx())
                 )
             }
 
-
-            // Radar sweep with glow
-            drawCircle(
-                color = Color(0x44A5D6FF),
-                radius = sweepRadius.value,
-                center = center
+            // Rotating sweep beam
+            drawArc(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0x44A5D6FF), Color.Transparent),
+                    center = center,
+                    radius = maxRadius,
+                    tileMode = TileMode.Clamp
+                ),
+                startAngle = sweepAngle,
+                sweepAngle = 30f,
+                useCenter = true
             )
 
-            // Plot matches using RSSI if available
+            // Pulsing match dots
             matches.forEachIndexed { index, match ->
-                val angle = Math.toRadians((index * 360.0 / matches.size))
-                val rssiNormalized = ((127 + (match.rssi ?: -100)).coerceIn(20, 100)) / 100f
-                val radius = rssiNormalized * (size.minDimension / 2.2f)
-                val x = center.x + radius * cos(angle).toFloat()
-                val y = center.y + radius * sin(angle).toFloat()
-                val color = try { match.colorCode as Color } catch (e: Exception) { Color.Gray }
-
+                val angleRad = Math.toRadians(index * 360.0 / matches.size)
+                val spacing = maxRadius / (matches.size + 1)
+                val r = spacing * (index + 1)
+                val x = center.x + (r * cos(angleRad)).toFloat()
+                val y = center.y + (r * sin(angleRad)).toFloat()
+                val color = when (match.colorCode) {
+                    "Green" -> Color.Green
+                    "Yellow" -> Color.Yellow
+                    else -> Color.Gray
+                }
                 drawCircle(
                     color = color,
-                    radius = 14f,
-                    center = Offset(x, y)
-                )
-                drawCircle(
-                    color = color.copy(alpha = 0.3f),
-                    radius = 24f,
                     center = Offset(x, y),
-                    style = Stroke(width = 2f)
+                    radius = 12.dp.toPx() * pulseFactor
                 )
             }
-        }
-
-        // Tappable dots overlay
-        matches.forEachIndexed { index, match ->
-            val angle = Math.toRadians((index * 360.0 / matches.size))
-            val rssiNormalized = ((127 + (match.rssi ?: -100)).coerceIn(20, 100)) / 100f
-            val radius = rssiNormalized * 180f
-            val x = radius * cos(angle).toFloat()
-            val y = radius * sin(angle).toFloat()
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset((x + 200).toInt(), (y + 200).toInt()) }
-                    .size(40.dp)
-                    .clickable { onDotTapped(match) }
-            )
         }
 
         if (matches.isEmpty()) {
             Text(
                 text = "Searching for nearby matches...",
-                color = Color.White.copy(alpha = pulseAlpha),
-                fontSize = 16.sp,
+                color = Color.White.copy(alpha = loadingAlpha),
                 modifier = Modifier.align(Alignment.Center)
             )
         }
