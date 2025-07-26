@@ -24,7 +24,8 @@ class MainViewModel : ViewModel() {
         }
 
         val criteria = CriteriaManager.getEncodedCriteria(context)
-        bleAdvertiser.startAdvertising(criteria)
+        val senderId = UserIdManager.getOrGenerateId(context)
+        bleAdvertiser.startAdvertising(criteria, senderId)
         bleScanner.startScanning()
     }
 

@@ -46,8 +46,9 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     onStart = {
                         if (hasPermissions()) {
-                            val data = CriteriaManager.getEncodedCriteria(this)
-                            bleAdvertiser.startAdvertising(data)
+                            val criteria = CriteriaManager.getEncodedCriteria(this)
+                            val senderId = UserIdManager.getOrGenerateId(this)
+                            bleAdvertiser.startAdvertising(criteria, senderId)
                             bleScanner.startScanning()
                             Toast.makeText(this, "Started", Toast.LENGTH_SHORT).show()
                         } else {

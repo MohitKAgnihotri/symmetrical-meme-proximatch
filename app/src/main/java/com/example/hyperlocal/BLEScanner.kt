@@ -1,12 +1,12 @@
 package com.example.hyperlocal
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.*
 import android.content.Context
 import android.os.ParcelUuid
 import android.util.Log
+import android.widget.Toast
 import androidx.annotation.RequiresPermission
 import java.util.*
 
@@ -23,16 +23,27 @@ class BLEScanner(
             val serviceData = result.scanRecord
                 ?.getServiceData(ParcelUuid(UUID.fromString("0000FEAA-0000-1000-8000-00805F9B34FB")))
 
-            if (serviceData != null) {
-                val remoteCriteria = CriteriaManager.decodeCriteria(serviceData)
-                val localPreferences = CriteriaManager.getUserPreferences(context)
-                val matchPercentage = CriteriaManager.calculateMatchPercentage(localPreferences, remoteCriteria)
+            if (serviceData != null && serviceData.size >= 12) {
+                val criteriaBytes = serviceData.copyOfRange(0, 4)
+                val senderId = serviceData.copyOfRange(4, 12).toString(Charsets.UTF_8)
+
+                val remotePrefs = CriteriaManager.decodeCriteria(criteriaBytes)
+                val localPrefs = CriteriaManager.getUserPreferences(context)
+                val matchPercentage = CriteriaManager.calculateMatchPercentage(localPrefs, remotePrefs)
                 val colorCode = when {
                     matchPercentage >= 75 -> "Green"
                     matchPercentage >= 40 -> "Yellow"
                     else -> "Grey"
                 }
-                onMatchFound(MatchResult(matchPercentage, colorCode))
+
+                val isMutual = InterestManager.hasSentInterest(context, senderId)
+
+                if (isMutual) {
+                    Log.d("BLEScanner", "🎉 Mutual match with $senderId")
+                    Toast.makeText(context, "🎉 Mutual match!", Toast.LENGTH_SHORT).show()
+                }
+
+                onMatchFound(MatchResult(matchPercentage, colorCode, id = senderId))
             }
         }
 
@@ -55,6 +66,7 @@ class BLEScanner(
         Log.d("BLEScanner", "Started scanning")
     }
 
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun stopScanning() {
         bluetoothLeScanner?.stopScan(scanCallback)
         Log.d("BLEScanner", "Stopped scanning")
