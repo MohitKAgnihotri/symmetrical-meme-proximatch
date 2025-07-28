@@ -37,7 +37,8 @@ class BLEScanner(
 
         callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val deviceId = result.device.address.takeLast(8)
+                // Unused variable, can be removed if not needed elsewhere
+                // val deviceId = result.device.address.takeLast(8)
                 val serviceData = result.scanRecord
                     ?.getServiceData(ParcelUuid(UUID.fromString("0000180D-0000-1000-8000-00805f9b34fb")))
 
@@ -52,12 +53,24 @@ class BLEScanner(
                         val theirPrefs = decodeCriteria(criteriaBytes)
                         val ourPrefs = CriteriaManager.getUserPreferences(context)
                         val matchPercent = calculateMatchPercentage(ourPrefs, theirPrefs)
-                        val color = when {
-                            matchPercent >= 80 -> "Green"
-                            matchPercent >= 50 -> "Yellow"
-                            else -> "Gray"
-                        }
-                        onMatchFound(MatchResult(matchPercent, color, senderId, rssi))
+
+                        // The 'color' variable is no longer needed here, as the UI now handles color logic
+                        // val color = when {
+                        //     matchPercent >= 80 -> "Green"
+                        //     matchPercent >= 50 -> "Yellow"
+                        //     else -> "Gray"
+                        // }
+
+                        // **FIXED: Arguments are now in the correct order and type**
+                        onMatchFound(
+                            MatchResult(
+                                id = senderId,
+                                matchPercentage = matchPercent,
+                                distanceRssi = rssi,
+                                // TODO: Update BLE service data to include a byte for gender
+                                gender = Gender.PRIVATE
+                            )
+                        )
                         Log.d("BLEScanner", "Detected $senderId @ $rssi dBm → $matchPercent% match")
                     }
                 }

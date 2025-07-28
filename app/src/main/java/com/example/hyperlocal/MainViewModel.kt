@@ -5,8 +5,8 @@ import android.Manifest
 import android.content.Context
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
-import com.example.hyperlocal.ui.RadarTheme
-import com.example.hyperlocal.ui.ThemeProvider
+import com.example.ui.components.RadarTheme
+import com.example.ui.components.ThemeProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 

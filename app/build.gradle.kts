@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.ui.tooling.preview)
     debugImplementation(libs.androidx.ui.tooling)
+    implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Lifecycle + ViewModel
     implementation(libs.androidx.lifecycle.runtime.ktx)
