@@ -70,6 +70,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx.v1120)
     implementation(libs.mapbox.maps)
+    implementation(libs.play.services.location)
 
 
     // BLE (already part of Android SDK)

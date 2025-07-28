@@ -1,9 +1,8 @@
-// MainViewModel.kt
 package com.example.hyperlocal
 
-import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
-import androidx.annotation.RequiresPermission
+import android.location.Location
 import androidx.lifecycle.ViewModel
 import com.example.ui.components.RadarTheme
 import com.example.ui.components.ThemeProvider
@@ -14,27 +13,28 @@ class MainViewModel : ViewModel() {
 
     private lateinit var bleAdvertiser: BLEAdvertiser
     private lateinit var bleScanner: BLEScanner
+    private lateinit var locationHelper: LocationHelper
 
-    // 1️⃣ Flow of match results
     private val _matchResults = MutableStateFlow<List<MatchResult>>(emptyList())
     val matchResults: StateFlow<List<MatchResult>> = _matchResults
 
-    // 2️⃣ Currently selected radar theme
-    private val _selectedTheme = MutableStateFlow<RadarTheme>(ThemeProvider.CorporatePulse)
+    private val _selectedTheme = MutableStateFlow(ThemeProvider.NeonTech)
     val selectedTheme: StateFlow<RadarTheme> = _selectedTheme
 
-    /** Switch between available radar themes at runtime */
-    fun selectTheme(theme: RadarTheme) {
-        _selectedTheme.value = theme
-    }
+    // StateFlow to hold the user's current location
+    private val _userLocation = MutableStateFlow<Location?>(null)
+    val userLocation: StateFlow<Location?> = _userLocation
 
-    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
+    @SuppressLint("MissingPermission")
     fun start(context: Context) {
-        bleAdvertiser = BLEAdvertiser(context)
-        bleScanner = BLEScanner(context) { match ->
-            // Append new match to the list
-            val updated = _matchResults.value.toMutableList().apply { add(match) }
-            _matchResults.value = updated
+        if (!::bleAdvertiser.isInitialized) {
+            bleAdvertiser = BLEAdvertiser(context)
+        }
+        if (!::bleScanner.isInitialized) {
+            bleScanner = BLEScanner(context) { match ->
+                val updated = _matchResults.value.toMutableList().apply { add(match) }
+                _matchResults.value = updated
+            }
         }
 
         val criteria = CriteriaManager.getEncodedCriteria(context)
@@ -43,10 +43,25 @@ class MainViewModel : ViewModel() {
         bleScanner.startScanning()
     }
 
-    @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
+    @SuppressLint("MissingPermission")
     fun stop() {
-        bleAdvertiser.stopAdvertising()
-        bleScanner.stopScanning()
+        if (::bleAdvertiser.isInitialized) {
+            bleAdvertiser.stopAdvertising()
+        }
+        if (::bleScanner.isInitialized) {
+            bleScanner.stopScanning()
+        }
         _matchResults.value = emptyList()
+    }
+
+    // Function to initialize and use the LocationHelper to get coordinates
+    @SuppressLint("MissingPermission")
+    fun fetchUserLocation(context: Context) {
+        if (!::locationHelper.isInitialized) {
+            locationHelper = LocationHelper(context)
+        }
+        locationHelper.fetchCurrentLocation { location ->
+            _userLocation.value = location
+        }
     }
 }

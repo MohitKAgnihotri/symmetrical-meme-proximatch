@@ -37,14 +37,27 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
     val theme by viewModel.selectedTheme.collectAsState()
     val matches by viewModel.matchResults.collectAsState()
+
+    // Observe the user's location from the ViewModel
+    val userLocation by viewModel.userLocation.collectAsState()
+
     var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
     var showPermissionRationale by remember { mutableStateOf(false) }
+
+    // This effect will run once when the screen first appears
+    LaunchedEffect(Unit) {
+        if (checkBLEPermissions(context)) {
+            // If we have permissions, fetch the location for the zoom animation
+            viewModel.fetchUserLocation(context)
+        }
+    }
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.all { it }) {
             Toast.makeText(context, "Permissions granted. Starting...", Toast.LENGTH_SHORT).show()
+            viewModel.fetchUserLocation(context) // Also fetch location after permissions are granted
             viewModel.start(context)
         } else {
             showPermissionRationale = true
@@ -64,18 +77,21 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Layer 1: The Map Background
-        MapBackground(modifier = Modifier.fillMaxSize())
+        // Layer 1: The Map Background, now with location data for the animation
+        MapBackground(
+            userLocation = userLocation,
+            modifier = Modifier.fillMaxSize()
+        )
 
-        // --- FIX: Layer 2 is now the FULL-SCREEN transparent Radar Canvas ---
+        // Layer 2: The full-screen transparent Radar Canvas
         RadarCanvas(
             theme = theme,
             matches = matches,
             onDotTapped = { tapped -> selectedMatch = tapped },
-            modifier = Modifier.fillMaxSize() // Fills the whole screen
+            modifier = Modifier.fillMaxSize()
         )
 
-        // --- FIX: Layer 3 is the Scaffold, containing only floating UI elements ---
+        // Layer 3: The Scaffold with floating UI elements
         Scaffold(
             containerColor = Color.Transparent,
             topBar = { ProxiMatchTopAppBar() },
@@ -101,7 +117,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 )
             }
         ) { paddingValues ->
-            // The content of the scaffold is now just the list, pushed to the bottom
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -119,13 +134,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 } else {
                     MatchList(
                         matches = matches,
-                        modifier = Modifier.align(Alignment.BottomCenter) // Align list to bottom
+                        modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
             }
         }
 
-        // The dialog will appear over everything
         selectedMatch?.let { match ->
             InterestDialog(
                 match = match,
@@ -140,7 +154,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 }
 
-// ... (PermissionRationaleDialog and other helper functions remain the same)
+// ... (Your PermissionRationaleDialog, getRequiredPermissions, and checkBLEPermissions functions)
 
 @Composable
 fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
