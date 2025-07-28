@@ -1,65 +1,104 @@
 package com.example.hyperlocal.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.hyperlocal.Gender
 import com.example.hyperlocal.InterestManager
 import com.example.hyperlocal.MainViewModel
 import com.example.hyperlocal.MatchResult
 import com.example.hyperlocal.ui.components.ActionBottomBar
 import com.example.hyperlocal.ui.components.InterestDialog
 import com.example.hyperlocal.ui.components.ProxiMatchTopAppBar
-import com.example.ui.components.* // Ensure this imports from the correct package
+import com.example.ui.components.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
-
     val theme by viewModel.selectedTheme.collectAsState()
+    val matches by viewModel.matchResults.collectAsState()
+    var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
 
-    // Create Sample Data for Testing the new Radar Visuals
-    val sampleMatches = remember {
-        listOf(
-            MatchResult("user1", 95, -40, Gender.FEMALE),
-            MatchResult("user2", 20, -85, Gender.MALE),
-            MatchResult("user3", 60, -65, Gender.LGBTQ_PLUS),
-            MatchResult("user4", 90, -80, Gender.PRIVATE),
-            MatchResult("user5", 55, -55, Gender.MALE)
+    // State to control the visibility of our permission explanation dialog
+    var showPermissionRationale by remember { mutableStateOf(false) }
+
+    // This launcher handles the result of the permission request dialog
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allPermissionsGranted = permissions.values.all { it }
+        if (allPermissionsGranted) {
+            Toast.makeText(context, "Permissions granted. Starting...", Toast.LENGTH_SHORT).show()
+            viewModel.start(context)
+        } else {
+            // If permissions were denied, show our explanation
+            showPermissionRationale = true
+        }
+    }
+
+    // This composable will show the dialog when the state is true
+    if (showPermissionRationale) {
+        PermissionRationaleDialog(
+            onConfirm = {
+                showPermissionRationale = false
+                // Create an intent to open the app's settings screen
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                intent.data = Uri.fromParts("package", context.packageName, null)
+                context.startActivity(intent)
+            },
+            onDismiss = { showPermissionRationale = false }
         )
     }
 
-    var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
-
-    // --- The Main UI is now a Box for layering ---
     Box(modifier = Modifier.fillMaxSize()) {
-        // --- Layer 1: The Map Background ---
         MapBackground(modifier = Modifier.fillMaxSize())
 
-        // --- Layer 2: The Main UI Scaffold ---
         Scaffold(
             containerColor = Color.Transparent,
             topBar = { ProxiMatchTopAppBar() },
             bottomBar = {
-                // This will now correctly call the implementation from your components package
                 ActionBottomBar(
                     onStartClicked = {
-                        if (checkBLEPermissions(context)) {
+                        val permissions = getRequiredPermissions()
+                        val allPermissionsGranted = permissions.all {
+                            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                        }
+
+                        if (allPermissionsGranted) {
                             viewModel.start(context)
                             Toast.makeText(context, "Started", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Missing permissions", Toast.LENGTH_SHORT).show()
+                            // This checks if the user has permanently denied the permission
+                            val shouldShowRationale = permissions.any {
+                                ActivityCompat.shouldShowRequestPermissionRationale(context as Activity, it)
+                            }
+                            if (shouldShowRationale) {
+                                // If so, show our custom explanation dialog
+                                showPermissionRationale = true
+                            } else {
+                                // Otherwise, show the system permission request dialog
+                                permissionsLauncher.launch(permissions)
+                            }
                         }
                     },
                     onStopClicked = {
@@ -77,7 +116,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             ) {
                 RadarCanvas(
                     theme = theme,
-                    matches = sampleMatches,
+                    matches = matches,
                     onDotTapped = { tapped -> selectedMatch = tapped },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -86,7 +125,21 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                MatchList(matches = sampleMatches)
+                if (matches.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Press 'Start' to scan for nearby users.\nEnsure permissions are granted.",
+                            color = Color.White.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                } else {
+                    MatchList(matches = matches)
+                }
             }
 
             selectedMatch?.let { match ->
@@ -104,16 +157,40 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 }
 
-// --- The faulty function that was here has been DELETED ---
+@Composable
+fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Permissions Required") },
+        text = { Text("This app needs Bluetooth and Location permissions to find nearby users. Please grant them in the app settings.") },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Open Settings")
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+private fun getRequiredPermissions(): Array<String> {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_ADVERTISE,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        )
+    } else {
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+}
 
 fun checkBLEPermissions(context: Context): Boolean {
-    val required = listOf(
-        Manifest.permission.BLUETOOTH_ADVERTISE,
-        Manifest.permission.BLUETOOTH_SCAN,
-        Manifest.permission.BLUETOOTH_CONNECT,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    )
-    return required.all { perm ->
+    return getRequiredPermissions().all { perm ->
         ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
     }
 }

@@ -1,11 +1,6 @@
 package com.example.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,7 +24,6 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-// --- DATA CLASSES AND THEME PROVIDER (UNCHANGED) ---
 enum class RingStyle { SOLID, DASHED, GRADIENT }
 
 data class RadarTheme(
@@ -69,21 +63,18 @@ object ThemeProvider {
     )
 }
 
-
 @Composable
 fun ThemedRadarCanvas(
     theme: RadarTheme,
     matches: List<MatchResult>,
     modifier: Modifier = Modifier
 ) {
-    // --- FIX: WE USE BoxWithConstraints TO GET THE SIZE FOR OUR CALCULATIONS ---
     BoxWithConstraints(modifier = modifier) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         val center = Offset(w / 2, h / 2)
         val maxRadius = min(w, h) / 2f
 
-        // This Canvas is now only for the background and sweep animation
         val infiniteTransition = rememberInfiniteTransition(label = "RadarSweep")
         val sweepAngle by infiniteTransition.animateFloat(
             initialValue = 0f,
@@ -95,24 +86,21 @@ fun ThemedRadarCanvas(
         )
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Draw background and rings
             drawRect(
                 brush = Brush.radialGradient(colors = listOf(theme.bgGradient.first, theme.bgGradient.second), center = center, radius = maxRadius),
                 size = size
             )
             (1..theme.circleCount).forEach { i ->
                 drawCircle(
-                    color = theme.ringPrimary,
+                    color = theme.ringPrimary.copy(alpha = 0.3f),
                     center = center,
                     radius = maxRadius * i / theme.circleCount,
                     style = Stroke(width = 1.dp.toPx())
                 )
             }
-
-            // Draw sweep beam
             drawArc(
                 brush = Brush.sweepGradient(
-                    colors = listOf(Color.Transparent, theme.sweepColor),
+                    colors = listOf(Color.Transparent, theme.sweepColor.copy(alpha = 0.4f)),
                     center = center
                 ),
                 startAngle = sweepAngle,
@@ -121,35 +109,22 @@ fun ThemedRadarCanvas(
             )
         }
 
-        // --- FIX: USE A 'Layout' COMPOSABLE TO POSITION THE DOTS ---
-        // Layout is the proper way to perform custom measurement and placement of child Composables.
         Layout(
             content = {
-                // The content of our Layout is a list of Dot composables.
-                // Each dot is now its own composable, managing its own animations.
                 matches.forEach { match ->
                     MatchDot(theme = theme, match = match)
                 }
             }
         ) { measurables, constraints ->
-            // In the 'measure' block, we determine each dot's position.
             val placeables = measurables.map { it.measure(constraints) }
-
             layout(constraints.maxWidth, constraints.maxHeight) {
-                // In the 'placement' block, we tell each dot where to go.
                 placeables.forEachIndexed { index, placeable ->
                     val match = matches[index]
-
                     val normalizedDistance = ((match.distanceRssi - -90f) / (-30f - -90f)).coerceIn(0f, 1f)
                     val radius = maxRadius * (1 - normalizedDistance)
                     val angleRad = (match.id.hashCode() % 360) * (Math.PI / 180)
-
-                    // Calculate the dot's center position
                     val x = center.x + (radius * cos(angleRad)).toFloat()
                     val y = center.y + (radius * sin(angleRad)).toFloat()
-
-                    // Place the composable on the screen at the calculated (x, y),
-                    // adjusting for the dot's own size to center it correctly.
                     placeable.placeRelative(
                         x = (x - placeable.width / 2).toInt(),
                         y = (y - placeable.height / 2).toInt()
@@ -160,28 +135,24 @@ fun ThemedRadarCanvas(
     }
 }
 
-
 @Composable
 private fun MatchDot(
     theme: RadarTheme,
     match: MatchResult
 ) {
-    // Each dot is a composable that manages its own state and animations.
     val dotRadiusPx = with(LocalDensity.current) { theme.dotRadiusDp.toPx() }
 
-    // Pulsing animation state now lives safely inside a @Composable function
     val infiniteTransition = rememberInfiniteTransition(label = "DotPulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.1f,
         targetValue = 0.6f,
         animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
-        label = "PulseAlpha" // This now returns Float, fixing the ComplexDouble error
+        label = "PulseAlpha"
     )
 
     Canvas(modifier = Modifier.size(theme.dotRadiusDp * 4)) {
-        val dotCenter = center // Center of this smaller Canvas
+        val dotCenter = center
 
-        // --- GLOW ---
         if (match.matchPercentage > 85) {
             val baseGlowColor = when (match.gender) {
                 Gender.MALE -> theme.maleColor
@@ -197,12 +168,11 @@ private fun MatchDot(
             )
         }
 
-        // --- DOT ---
         val baseDotColor = when (match.gender) {
             Gender.MALE -> theme.maleColor
             Gender.FEMALE -> theme.femaleColor
             Gender.PRIVATE -> theme.privateColor
-            Gender.LGBTQ_PLUS -> Color.Transparent // Handled by brush
+            Gender.LGBTQ_PLUS -> Color.Transparent
         }
         val paleColor = baseDotColor.copy(alpha = 0.4f)
         val matchColor = lerp(paleColor, baseDotColor, match.matchPercentage / 100f)
