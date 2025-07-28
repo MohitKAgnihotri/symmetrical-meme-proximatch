@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     alias(libs.plugins.kotlin.compose)
+
 }
 
 android {
@@ -35,7 +36,12 @@ android {
         jvmTarget = "17"
     }
 
+    // --- FIX: ADD THIS BLOCK ---
     packaging {
+        jniLibs {
+            // This forces Gradle to correctly align all .so files for 16 KB page size compatibility.
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -63,6 +69,7 @@ dependencies {
     implementation(libs.accompanist.systemuicontroller)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx.v1120)
+    implementation(libs.mapbox.maps)
 
 
     // BLE (already part of Android SDK)
