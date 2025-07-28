@@ -21,47 +21,55 @@ class MainViewModel : ViewModel() {
     private val _selectedTheme = MutableStateFlow(ThemeProvider.NeonTech)
     val selectedTheme: StateFlow<RadarTheme> = _selectedTheme
 
-    // StateFlow to hold the user's current location
     private val _userLocation = MutableStateFlow<Location?>(null)
     val userLocation: StateFlow<Location?> = _userLocation
 
+    // --- NEW: State to control the radar sweep animation ---
+    private val _isSweeping = MutableStateFlow(false)
+    val isSweeping: StateFlow<Boolean> = _isSweeping
+
+    // --- NEW: State to store the last location that triggered a zoom ---
+    private var lastZoomLocation: Location? = null
+
     @SuppressLint("MissingPermission")
     fun start(context: Context) {
-        if (!::bleAdvertiser.isInitialized) {
-            bleAdvertiser = BLEAdvertiser(context)
-        }
+        if (!::bleAdvertiser.isInitialized) bleAdvertiser = BLEAdvertiser(context)
         if (!::bleScanner.isInitialized) {
             bleScanner = BLEScanner(context) { match ->
-                val updated = _matchResults.value.toMutableList().apply { add(match) }
-                _matchResults.value = updated
+                // Avoid adding duplicate matches
+                val currentMatches = _matchResults.value
+                if (currentMatches.none { it.id == match.id }) {
+                    _matchResults.value = currentMatches + match
+                }
             }
         }
 
-        val criteria = CriteriaManager.getEncodedCriteria(context)
-        val senderId = UserIdManager.getOrGenerateId(context)
-        bleAdvertiser.startAdvertising(criteria, senderId)
+        // Start scanning and begin the sweep animation
         bleScanner.startScanning()
+        _isSweeping.value = true
+
+        // Fetch location to check for zoom animation
+        fetchUserLocation(context)
     }
 
     @SuppressLint("MissingPermission")
     fun stop() {
-        if (::bleAdvertiser.isInitialized) {
-            bleAdvertiser.stopAdvertising()
-        }
-        if (::bleScanner.isInitialized) {
-            bleScanner.stopScanning()
-        }
-        _matchResults.value = emptyList()
+        if (::bleScanner.isInitialized) bleScanner.stopScanning()
+        // Stop the sweep, but keep the dots on screen
+        _isSweeping.value = false
     }
 
-    // Function to initialize and use the LocationHelper to get coordinates
     @SuppressLint("MissingPermission")
     fun fetchUserLocation(context: Context) {
-        if (!::locationHelper.isInitialized) {
-            locationHelper = LocationHelper(context)
-        }
-        locationHelper.fetchCurrentLocation { location ->
-            _userLocation.value = location
+        if (!::locationHelper.isInitialized) locationHelper = LocationHelper(context)
+
+        locationHelper.fetchCurrentLocation { newLocation ->
+            val lastLocation = lastZoomLocation
+            // Trigger zoom if it's the first time, or if distance is > 5km
+            if (lastLocation == null || lastLocation.distanceTo(newLocation) > 5000) {
+                _userLocation.value = newLocation
+                lastZoomLocation = newLocation
+            }
         }
     }
 }

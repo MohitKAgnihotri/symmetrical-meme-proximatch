@@ -5,13 +5,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
@@ -24,7 +22,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-// --- DATA CLASSES AND THEME PROVIDER (UNCHANGED) ---
+// --- DATA CLASSES AND THEME PROVIDER (Unchanged) ---
 enum class RingStyle { SOLID, DASHED, GRADIENT }
 
 data class RadarTheme(
@@ -64,11 +62,11 @@ object ThemeProvider {
     )
 }
 
-
 @Composable
 fun ThemedRadarCanvas(
     theme: RadarTheme,
     matches: List<MatchResult>,
+    isSweeping: Boolean, // Parameter to control animation
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier) {
@@ -77,24 +75,30 @@ fun ThemedRadarCanvas(
         val center = Offset(w / 2, h / 2)
         val maxRadius = min(w, h) / 2f
 
-        val infiniteTransition = rememberInfiniteTransition(label = "RadarSweep")
-        val sweepAngle by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(3000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ), label = "SweepAngle"
-        )
+        // Conditionally animate the sweep angle
+        val sweepAngle by if (isSweeping) {
+            val infiniteTransition = rememberInfiniteTransition(label = "RadarSweep")
+            infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(3000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ), label = "SweepAngle"
+            )
+        } else {
+            // If not sweeping, keep the angle fixed
+            remember { mutableFloatStateOf(0f) }
+        }
+
+        // Make sweep transparent when not active
+        val sweepColor = if (isSweeping) theme.sweepColor else Color.Transparent
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // --- FIX: REMOVED the background and ring drawing logic ---
-            // The canvas is now transparent.
-
-            // Draw sweep beam, now centered on the screen
+            // Draw sweep beam
             drawArc(
                 brush = Brush.sweepGradient(
-                    colors = listOf(Color.Transparent, theme.sweepColor.copy(alpha = 0.4f)),
+                    colors = listOf(Color.Transparent, sweepColor.copy(alpha = 0.4f)),
                     center = center
                 ),
                 startAngle = sweepAngle,
@@ -103,6 +107,7 @@ fun ThemedRadarCanvas(
             )
         }
 
+        // Layout for dots (unchanged)
         Layout(
             content = {
                 matches.forEach { match ->
@@ -114,7 +119,6 @@ fun ThemedRadarCanvas(
             layout(constraints.maxWidth, constraints.maxHeight) {
                 placeables.forEachIndexed { index, placeable ->
                     val match = matches[index]
-                    // The plotting logic now uses the full screen dimensions
                     val normalizedDistance = ((match.distanceRssi - -90f) / (-30f - -90f)).coerceIn(0f, 1f)
                     val radius = maxRadius * (1 - normalizedDistance)
                     val angleRad = (match.id.hashCode() % 360) * (Math.PI / 180)

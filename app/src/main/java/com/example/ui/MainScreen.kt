@@ -1,4 +1,4 @@
-package com.example.ui
+package com.example.hyperlocal.ui
 
 import android.Manifest
 import android.app.Activity
@@ -37,30 +37,28 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
     val theme by viewModel.selectedTheme.collectAsState()
     val matches by viewModel.matchResults.collectAsState()
-
-    // Observe the user's location from the ViewModel
     val userLocation by viewModel.userLocation.collectAsState()
+
+    // Observe the new sweeping state
+    val isSweeping by viewModel.isSweeping.collectAsState()
 
     var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
     var showPermissionRationale by remember { mutableStateOf(false) }
-
-    // This effect will run once when the screen first appears
-    LaunchedEffect(Unit) {
-        if (checkBLEPermissions(context)) {
-            // If we have permissions, fetch the location for the zoom animation
-            viewModel.fetchUserLocation(context)
-        }
-    }
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.all { it }) {
             Toast.makeText(context, "Permissions granted. Starting...", Toast.LENGTH_SHORT).show()
-            viewModel.fetchUserLocation(context) // Also fetch location after permissions are granted
             viewModel.start(context)
         } else {
             showPermissionRationale = true
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (checkBLEPermissions(context)) {
+            viewModel.fetchUserLocation(context)
         }
     }
 
@@ -77,32 +75,27 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Layer 1: The Map Background, now with location data for the animation
-        MapBackground(
-            userLocation = userLocation,
-            modifier = Modifier.fillMaxSize()
-        )
+        MapBackground(userLocation = userLocation, modifier = Modifier.fillMaxSize())
 
-        // Layer 2: The full-screen transparent Radar Canvas
         RadarCanvas(
             theme = theme,
             matches = matches,
+            isSweeping = isSweeping, // Pass the state here
             onDotTapped = { tapped -> selectedMatch = tapped },
             modifier = Modifier.fillMaxSize()
         )
 
-        // Layer 3: The Scaffold with floating UI elements
         Scaffold(
             containerColor = Color.Transparent,
             topBar = { ProxiMatchTopAppBar() },
             bottomBar = {
                 ActionBottomBar(
                     onStartClicked = {
-                        val permissions = getRequiredPermissions()
-                        if (permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
+                        if (checkBLEPermissions(context)) {
                             viewModel.start(context)
-                            Toast.makeText(context, "Started", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Scanning Started", Toast.LENGTH_SHORT).show()
                         } else {
+                            val permissions = getRequiredPermissions()
                             if (permissions.any { ActivityCompat.shouldShowRequestPermissionRationale(context as Activity, it) }) {
                                 showPermissionRationale = true
                             } else {
@@ -112,7 +105,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     },
                     onStopClicked = {
                         viewModel.stop()
-                        Toast.makeText(context, "Stopped", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Scanning Stopped", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -125,7 +118,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             ) {
                 if (matches.isEmpty()) {
                     Text(
-                        text = "Press 'Start' to scan for nearby users.\nEnsure permissions are granted.",
+                        text = "Press 'Start' to scan for nearby users.",
                         color = Color.White.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyLarge,
@@ -153,8 +146,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 }
-
-// ... (Your PermissionRationaleDialog, getRequiredPermissions, and checkBLEPermissions functions)
 
 @Composable
 fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {

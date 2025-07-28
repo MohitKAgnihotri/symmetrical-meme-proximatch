@@ -20,6 +20,7 @@ import kotlin.math.sin
 fun RadarCanvas(
     theme: RadarTheme,
     matches: List<MatchResult>,
+    isSweeping: Boolean, // Parameter to pass down
     onDotTapped: (MatchResult) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -28,8 +29,6 @@ fun RadarCanvas(
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .height(400.dp)
             .pointerInput(matches) {
                 detectTapGestures { tapOffset: Offset ->
                     val w = size.width
@@ -38,7 +37,6 @@ fun RadarCanvas(
                     val maxRadius = min(w, h) / 2f
 
                     matches.forEach { match ->
-                        // Re-calculate dot position for hit-testing
                         val normalizedDistance = ((match.distanceRssi - -90f) / (-30f - -90f)).coerceIn(0f, 1f)
                         val radius = maxRadius * (1 - normalizedDistance)
                         val angleRad = (match.id.hashCode() % 360) * (Math.PI / 180)
@@ -54,10 +52,10 @@ fun RadarCanvas(
                 }
             }
     ) {
-        // --- FIX 2: REMOVED dotCount PARAMETER ---
         ThemedRadarCanvas(
             theme = theme,
             matches = matches,
+            isSweeping = isSweeping, // Pass the value here
             modifier = Modifier.fillMaxSize()
         )
     }
