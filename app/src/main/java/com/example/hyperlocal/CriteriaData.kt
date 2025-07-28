@@ -1,14 +1,77 @@
-package com.example.hyperlocal.ui
+package com.example.hyperlocal
+
+// A data class to hold a single criterion with its category
+data class Criterion(val name: String, val category: String, val isPremium: Boolean)
 
 object CriteriaData {
-    val defaultCriteria = listOf(
-        "Artistic", "Athletic", "Introverted", "Extroverted",
-        "Coffee Lover", "Dog Person", "Cat Person", "Gamer",
-        "Foodie", "Traveler", "Reader", "Night Owl",
-        "Early Bird", "Optimist", "Sarcastic", "Empathetic",
-        "Adventurous", "Chill", "Spiritual", "Skeptical",
-        "Social Butterfly", "Techie", "Music Lover", "Dancer",
-        "Health Conscious", "Minimalist", "DIY Enthusiast", "Romantic",
-        "Green Thumb", "Entrepreneur", "Open-Minded", "Deep Thinker"
+    // The full list of 64 characteristics
+    val allCriteria = listOf(
+        // --- FREE TIER (First 32) ---
+        Criterion("Artistic", "Creativity", false),
+        Criterion("Reader", "Hobbies", false),
+        Criterion("Gamer", "Hobbies", false),
+        Criterion("Music Lover", "Hobbies", false),
+        Criterion("Foodie", "Lifestyle", false),
+        Criterion("Traveler", "Lifestyle", false),
+        Criterion("Athletic", "Lifestyle", false),
+        Criterion("Health Conscious", "Lifestyle", false),
+        Criterion("Coffee Lover", "Simple Pleasures", false),
+        Criterion("Dog Person", "Pets", false),
+        Criterion("Cat Person", "Pets", false),
+        Criterion("Night Owl", "Habits", false),
+        Criterion("Early Bird", "Habits", false),
+        Criterion("Introverted", "Social Style", false),
+        Criterion("Extroverted", "Social Style", false),
+        Criterion("Social Butterfly", "Social Style", false),
+        Criterion("Chill", "Vibe", false),
+        Criterion("Adventurous", "Vibe", false),
+        Criterion("Optimist", "Mindset", false),
+        Criterion("Skeptical", "Mindset", false),
+        Criterion("Sarcastic", "Humor", false),
+        Criterion("Empathetic", "Personality", false),
+        Criterion("Deep Thinker", "Personality", false),
+        Criterion("Open-Minded", "Personality", false),
+        Criterion("Spiritual", "Beliefs", false),
+        Criterion("Techie", "Interests", false),
+        Criterion("DIY Enthusiast", "Interests", false),
+        Criterion("Minimalist", "Values", false),
+        Criterion("Romantic", "Values", false),
+        Criterion("Dancer", "Activities", false),
+        Criterion("Green Thumb", "Activities", false),
+        Criterion("Entrepreneur", "Ambition", false),
+
+        // --- PREMIUM TIER (Next 32) ---
+        Criterion("Spontaneous", "Vibe", true),
+        Criterion("Planner", "Vibe", true),
+        Criterion("Homebody", "Social Style", true),
+        Criterion("Thrill-Seeker", "Activities", true),
+        Criterion("Cinephile", "Hobbies", true),
+        Criterion("Podcast Listener", "Hobbies", true),
+        Criterion("History Buff", "Interests", true),
+        Criterion("Science Geek", "Interests", true),
+        Criterion("Wine Connoisseur", "Lifestyle", true),
+        Criterion("Craft Beer Fan", "Lifestyle", true),
+        Criterion("Vegan", "Lifestyle", true),
+        Criterion("Ambitious", "Ambition", true),
+        Criterion("Family-Oriented", "Values", true),
+        Criterion("Career-Focused", "Ambition", true),
+        Criterion("Frugal", "Values", true),
+        Criterion("Generous", "Values", true),
+        Criterion("Logical", "Personality", true),
+        Criterion("Creative", "Personality", true),
+        Criterion("Witty", "Humor", true),
+        Criterion("Goofy", "Humor", true),
+        Criterion("Direct", "Communication", true),
+        Criterion("Subtle", "Communication", true),
+        Criterion("Quality Time", "Love Language", true),
+        Criterion("Acts of Service", "Love Language", true),
+        Criterion("Physical Touch", "Love Language", true),
+        Criterion("Words of Affirmation", "Love Language", true),
+        Criterion("Receiving Gifts", "Love Language", true),
+        Criterion("Political", "Beliefs", true),
+        Criterion("Apolitical", "Beliefs", true),
+        Criterion("Fashionista", "Interests", true),
+        Criterion("Volunteer", "Values", true),
+        Criterion("Organized", "Habits", true)
     )
 }

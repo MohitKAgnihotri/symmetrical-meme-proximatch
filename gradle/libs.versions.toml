@@ -23,6 +23,7 @@ materialVersion = "1.9.0"
 navigationCompose = "2.9.2"
 mapbox = "11.7.1"
 playServicesLocation = "21.3.0"
+accompanist = "0.32.0"
 
 [libraries]
 accompanist-systemuicontroller = { module = "com.google.accompanist:accompanist-systemuicontroller", version.ref = "accompanistSystemuicontroller" }
@@ -52,6 +53,8 @@ material = { group = "com.google.android.material", name = "material", version.r
 material-v190 = { module = "com.google.android.material:material", version.ref = "materialVersion" }
 mapbox-maps = { module = "com.mapbox.maps:android", version.ref = "mapbox" }
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+accompanist-flowlayout = { module = "com.google.accompanist:accompanist-flowlayout", version.ref = "accompanist" }
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

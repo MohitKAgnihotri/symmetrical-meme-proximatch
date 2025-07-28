@@ -8,13 +8,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.hyperlocal.CriteriaData
 import com.example.hyperlocal.CriteriaManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VibeCheckScreen(navController: NavController) {
     val context = LocalContext.current
-    val criteria = remember { CriteriaData.defaultCriteria }
+    // FIX: Use the new 'allCriteria' list
+    val criteria = remember { CriteriaData.allCriteria }
     val selectedIndices = remember { mutableStateListOf<Int>() }
 
     Scaffold(
@@ -25,7 +27,7 @@ fun VibeCheckScreen(navController: NavController) {
             Button(
                 onClick = {
                     CriteriaManager.saveUserPreferences(context, selectedIndices)
-                    navController.navigate("main") // Navigate to MainActivity equivalent
+                    navController.navigate("main")
                 },
                 modifier = Modifier
                     .padding(16.dp)
@@ -41,7 +43,8 @@ fun VibeCheckScreen(navController: NavController) {
                 .padding(paddingValues)
                 .padding(8.dp)
         ) {
-            itemsIndexed(criteria) { index, item ->
+            items(criteria.size) { index ->
+                val item = criteria[index]
                 val selected = selectedIndices.contains(index)
                 FilterChip(
                     selected = selected,
@@ -49,7 +52,7 @@ fun VibeCheckScreen(navController: NavController) {
                         if (selected) selectedIndices.remove(index)
                         else selectedIndices.add(index)
                     },
-                    label = { Text(item) },
+                    label = { Text(item.name) }, // FIX: Use item.name
                     modifier = Modifier
                         .padding(4.dp)
                         .fillMaxWidth()
