@@ -1,29 +1,63 @@
 package com.example.hyperlocal
 
 import android.content.Context
-import android.content.SharedPreferences
 import androidx.core.content.edit
-import kotlin.experimental.or
 
 object CriteriaManager {
 
     private const val PREFS_NAME = "ProxiMatchPrefs"
-    private const val KEY_PREFERENCES = "criteria_prefs"
+    private const val KEY_GENDER = "user_gender"
+    private const val KEY_MY_CRITERIA = "my_criteria"
+    private const val KEY_THEIR_CRITERIA = "their_criteria"
 
     /**
-     * Converts selected criteria into a compact byte array (bitmask).
-     * Example: 32 booleans -> 4 bytes.
+     * Saves the entire UserProfile object to SharedPreferences.
      */
-    fun encodeCriteria(selectedIndices: List<Int>, size: Int = 32): ByteArray {
-        val bits = ByteArray(size / 8)
-        selectedIndices.forEach { index ->
-            val byteIndex = index / 8
-            val bitPosition = index % 8
-            bits[byteIndex] = bits[byteIndex] or (1 shl bitPosition).toByte()
+    fun saveUserProfile(context: Context, profile: UserProfile) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit {
+            putString(KEY_GENDER, profile.gender.name)
+            // Convert boolean lists to comma-separated strings for efficient storage
+            putString(KEY_MY_CRITERIA, profile.myCriteria.joinToString(","))
+            putString(KEY_THEIR_CRITERIA, profile.theirCriteria.joinToString(","))
+        }
+    }
+
+    /**
+     * Loads the UserProfile from SharedPreferences. Returns null if no profile is found.
+     */
+    fun getUserProfile(context: Context): UserProfile? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val genderStr = prefs.getString(KEY_GENDER, null) ?: return null
+        val myCriteriaStr = prefs.getString(KEY_MY_CRITERIA, null) ?: return null
+        val theirCriteriaStr = prefs.getString(KEY_THEIR_CRITERIA, null) ?: return null
+
+        return UserProfile(
+            gender = Gender.valueOf(genderStr),
+            myCriteria = myCriteriaStr.split(',').map { it.toBoolean() },
+            theirCriteria = theirCriteriaStr.split(',').map { it.toBoolean() }
+        )
+    }
+
+    /**
+     * Converts selected criteria (a list of booleans) into a compact byte array (bitmask).
+     * Supports up to 64 criteria, resulting in an 8-byte array.
+     */
+    fun encodeCriteria(selectedCriteria: List<Boolean>): ByteArray {
+        val bits = ByteArray(8) // 64 bits = 8 bytes
+        selectedCriteria.forEachIndexed { index, isSelected ->
+            if (isSelected) {
+                val byteIndex = index / 8
+                val bitPosition = index % 8
+                bits[byteIndex] = (bits[byteIndex].toInt() or (1 shl bitPosition)).toByte()
+            }
         }
         return bits
     }
 
+    /**
+     * Decodes a byte array (bitmask) back into a list of 64 booleans.
+     */
     fun decodeCriteria(data: ByteArray): List<Boolean> {
         val result = mutableListOf<Boolean>()
         for (byte in data) {
@@ -31,24 +65,12 @@ object CriteriaManager {
                 result.add((byte.toInt() shr i) and 1 == 1)
             }
         }
-        return result.take(32) // truncate to expected size
+        return result.take(64) // Ensure the list is exactly 64 items long
     }
 
-    fun saveUserPreferences(context: Context, selectedIndices: List<Int>) {
-        val encoded = encodeCriteria(selectedIndices)
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-            putString(KEY_PREFERENCES, encoded.joinToString(",") { it.toString() })
-        }
-    }
-
-    fun getUserPreferences(context: Context): List<Boolean> {
-        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_PREFERENCES, null)
-            ?: return List(32) { false } // default: none selected
-        val byteArray = raw.split(",").map { it.toByte() }.toByteArray()
-        return decodeCriteria(byteArray)
-    }
-
+    /**
+     * Calculates the match percentage between two users' preferences.
+     */
     fun calculateMatchPercentage(
         userPrefs: List<Boolean>,
         otherPrefs: List<Boolean>
@@ -57,15 +79,4 @@ object CriteriaManager {
         val total = userPrefs.count { it }
         return if (total == 0) 0 else (matches * 100 / total)
     }
-
-    fun getEncodedCriteria(context: Context): ByteArray {
-        val prefs = getUserPreferences(context)
-        val selectedIndices = prefs.mapIndexedNotNull { index, selected ->
-            if (selected) index else null
-        }
-        return encodeCriteria(selectedIndices)
-    }
-
 }
-
-

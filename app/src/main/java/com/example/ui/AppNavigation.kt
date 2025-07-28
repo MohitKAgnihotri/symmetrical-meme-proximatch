@@ -1,18 +1,18 @@
 package com.example.hyperlocal.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.hyperlocal.CriteriaData
-import com.example.hyperlocal.OnboardingViewModel
+import com.example.hyperlocal.*
 import com.example.ui.onboarding.OnboardingGenderScreen
 import com.example.ui.onboarding.OnboardingVibeScreen
-import com.example.ui.onboarding.WelcomeScreen // <-- Import the new screen
+import com.example.ui.onboarding.WelcomeScreen
 
 object Routes {
-    const val WELCOME = "welcome" // <-- Add new route
+    const val WELCOME = "welcome"
     const val GENDER_SELECTION = "gender"
     const val MY_VIBE_SELECTION = "my_vibe"
     const val THEIR_VIBE_SELECTION = "their_vibe"
@@ -23,12 +23,18 @@ object Routes {
 fun AppNavigation() {
     val navController = rememberNavController()
     val onboardingViewModel: OnboardingViewModel = viewModel()
+    val context = LocalContext.current
 
-    // --- FIX: Change the startDestination to the new Welcome screen ---
-    NavHost(navController = navController, startDestination = Routes.WELCOME) {
+    // Check if a profile already exists to determine the start destination
+    val startDestination = if (CriteriaManager.getUserProfile(context) != null) {
+        Routes.MAIN_SCREEN
+    } else {
+        Routes.WELCOME
+    }
+
+    NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.WELCOME) {
             WelcomeScreen {
-                // Navigate to the first step of onboarding
                 navController.navigate(Routes.GENDER_SELECTION)
             }
         }
@@ -53,9 +59,24 @@ fun AppNavigation() {
                 criteria = CriteriaData.allCriteria
             ) { indices ->
                 onboardingViewModel.onTheirVibesSelected(indices)
-                // TODO: Save the completed profile
+
+                // Assemble and save the completed profile
+                val finalGender = onboardingViewModel.gender.value
+                val myVibes = onboardingViewModel.myCriteria.value
+                val theirVibes = indices // Use the indices from this final step
+
+                if (finalGender != null) {
+                    val userProfile = UserProfile(
+                        gender = finalGender,
+                        myCriteria = List(64) { i -> i in myVibes },
+                        theirCriteria = List(64) { i -> i in theirVibes }
+                    )
+                    CriteriaManager.saveUserProfile(context, userProfile)
+                }
+
+                // Navigate to the main screen and clear the entire onboarding back stack
                 navController.navigate(Routes.MAIN_SCREEN) {
-                    popUpTo(Routes.WELCOME) { inclusive = true } // Clear the entire onboarding back stack
+                    popUpTo(Routes.WELCOME) { inclusive = true }
                 }
             }
         }
