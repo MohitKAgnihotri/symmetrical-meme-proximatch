@@ -3,7 +3,7 @@ package com.example.hyperlocal
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.example.hyperlocal.ui.MainScreen
+import com.example.ui.MainScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

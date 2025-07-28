@@ -16,10 +16,16 @@ import androidx.compose.ui.unit.dp
 import com.example.hyperlocal.Gender
 import com.example.hyperlocal.MatchResult
 
+// --- FIX 1: Added the modifier parameter ---
 @Composable
-fun MatchList(matches: List<MatchResult>) {
+fun MatchList(
+    matches: List<MatchResult>,
+    modifier: Modifier = Modifier
+) {
+    // --- FIX 2: Applied the modifier to the LazyColumn ---
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp) // Add more space
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(matches) { match ->
             MatchListItem(match = match)
@@ -66,7 +72,7 @@ private fun MatchListItem(match: MatchResult) {
         }
         Spacer(Modifier.height(4.dp))
         LinearProgressIndicator(
-            progress = { match.matchPercentage / 100f }, // Use lambda for progress
+            progress = { match.matchPercentage / 100f },
             modifier = Modifier.fillMaxWidth().height(6.dp),
             color = indicatorColor,
             trackColor = Color.White.copy(alpha = 0.1f)

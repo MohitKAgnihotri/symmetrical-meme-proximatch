@@ -1,4 +1,4 @@
-package com.example.hyperlocal.ui
+package com.example.ui
 
 import android.Manifest
 import android.app.Activity
@@ -38,30 +38,23 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val theme by viewModel.selectedTheme.collectAsState()
     val matches by viewModel.matchResults.collectAsState()
     var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
-
-    // State to control the visibility of our permission explanation dialog
     var showPermissionRationale by remember { mutableStateOf(false) }
 
-    // This launcher handles the result of the permission request dialog
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val allPermissionsGranted = permissions.values.all { it }
-        if (allPermissionsGranted) {
+        if (permissions.values.all { it }) {
             Toast.makeText(context, "Permissions granted. Starting...", Toast.LENGTH_SHORT).show()
             viewModel.start(context)
         } else {
-            // If permissions were denied, show our explanation
             showPermissionRationale = true
         }
     }
 
-    // This composable will show the dialog when the state is true
     if (showPermissionRationale) {
         PermissionRationaleDialog(
             onConfirm = {
                 showPermissionRationale = false
-                // Create an intent to open the app's settings screen
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                 intent.data = Uri.fromParts("package", context.packageName, null)
                 context.startActivity(intent)
@@ -71,8 +64,18 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // Layer 1: The Map Background
         MapBackground(modifier = Modifier.fillMaxSize())
 
+        // --- FIX: Layer 2 is now the FULL-SCREEN transparent Radar Canvas ---
+        RadarCanvas(
+            theme = theme,
+            matches = matches,
+            onDotTapped = { tapped -> selectedMatch = tapped },
+            modifier = Modifier.fillMaxSize() // Fills the whole screen
+        )
+
+        // --- FIX: Layer 3 is the Scaffold, containing only floating UI elements ---
         Scaffold(
             containerColor = Color.Transparent,
             topBar = { ProxiMatchTopAppBar() },
@@ -80,23 +83,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 ActionBottomBar(
                     onStartClicked = {
                         val permissions = getRequiredPermissions()
-                        val allPermissionsGranted = permissions.all {
-                            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-                        }
-
-                        if (allPermissionsGranted) {
+                        if (permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
                             viewModel.start(context)
                             Toast.makeText(context, "Started", Toast.LENGTH_SHORT).show()
                         } else {
-                            // This checks if the user has permanently denied the permission
-                            val shouldShowRationale = permissions.any {
-                                ActivityCompat.shouldShowRequestPermissionRationale(context as Activity, it)
-                            }
-                            if (shouldShowRationale) {
-                                // If so, show our custom explanation dialog
+                            if (permissions.any { ActivityCompat.shouldShowRequestPermissionRationale(context as Activity, it) }) {
                                 showPermissionRationale = true
                             } else {
-                                // Otherwise, show the system permission request dialog
                                 permissionsLauncher.launch(permissions)
                             }
                         }
@@ -108,54 +101,46 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 )
             }
         ) { paddingValues ->
-            Column(
+            // The content of the scaffold is now just the list, pushed to the bottom
+            Box(
                 modifier = Modifier
-                    .padding(paddingValues)
-                    .padding(horizontal = 8.dp, vertical = 12.dp)
                     .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
             ) {
-                RadarCanvas(
-                    theme = theme,
-                    matches = matches,
-                    onDotTapped = { tapped -> selectedMatch = tapped },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
                 if (matches.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Press 'Start' to scan for nearby users.\nEnsure permissions are granted.",
-                            color = Color.White.copy(alpha = 0.7f),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    }
+                    Text(
+                        text = "Press 'Start' to scan for nearby users.\nEnsure permissions are granted.",
+                        color = Color.White.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
                 } else {
-                    MatchList(matches = matches)
+                    MatchList(
+                        matches = matches,
+                        modifier = Modifier.align(Alignment.BottomCenter) // Align list to bottom
+                    )
                 }
             }
+        }
 
-            selectedMatch?.let { match ->
-                InterestDialog(
-                    match = match,
-                    onDismiss = { selectedMatch = null },
-                    onConfirm = { confirmedMatch ->
-                        InterestManager.saveInterest(context, confirmedMatch.id)
-                        Toast.makeText(context, "Interest sent", Toast.LENGTH_SHORT).show()
-                        selectedMatch = null
-                    }
-                )
-            }
+        // The dialog will appear over everything
+        selectedMatch?.let { match ->
+            InterestDialog(
+                match = match,
+                onDismiss = { selectedMatch = null },
+                onConfirm = { confirmedMatch ->
+                    InterestManager.saveInterest(context, confirmedMatch.id)
+                    Toast.makeText(context, "Interest sent", Toast.LENGTH_SHORT).show()
+                    selectedMatch = null
+                }
+            )
         }
     }
 }
+
+// ... (PermissionRationaleDialog and other helper functions remain the same)
 
 @Composable
 fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {

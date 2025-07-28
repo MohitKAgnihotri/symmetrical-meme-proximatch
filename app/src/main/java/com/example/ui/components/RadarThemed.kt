@@ -24,6 +24,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
+// --- DATA CLASSES AND THEME PROVIDER (UNCHANGED) ---
 enum class RingStyle { SOLID, DASHED, GRADIENT }
 
 data class RadarTheme(
@@ -63,6 +64,7 @@ object ThemeProvider {
     )
 }
 
+
 @Composable
 fun ThemedRadarCanvas(
     theme: RadarTheme,
@@ -86,18 +88,10 @@ fun ThemedRadarCanvas(
         )
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(
-                brush = Brush.radialGradient(colors = listOf(theme.bgGradient.first, theme.bgGradient.second), center = center, radius = maxRadius),
-                size = size
-            )
-            (1..theme.circleCount).forEach { i ->
-                drawCircle(
-                    color = theme.ringPrimary.copy(alpha = 0.3f),
-                    center = center,
-                    radius = maxRadius * i / theme.circleCount,
-                    style = Stroke(width = 1.dp.toPx())
-                )
-            }
+            // --- FIX: REMOVED the background and ring drawing logic ---
+            // The canvas is now transparent.
+
+            // Draw sweep beam, now centered on the screen
             drawArc(
                 brush = Brush.sweepGradient(
                     colors = listOf(Color.Transparent, theme.sweepColor.copy(alpha = 0.4f)),
@@ -120,6 +114,7 @@ fun ThemedRadarCanvas(
             layout(constraints.maxWidth, constraints.maxHeight) {
                 placeables.forEachIndexed { index, placeable ->
                     val match = matches[index]
+                    // The plotting logic now uses the full screen dimensions
                     val normalizedDistance = ((match.distanceRssi - -90f) / (-30f - -90f)).coerceIn(0f, 1f)
                     val radius = maxRadius * (1 - normalizedDistance)
                     val angleRad = (match.id.hashCode() % 360) * (Math.PI / 180)
