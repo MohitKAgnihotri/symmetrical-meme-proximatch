@@ -71,6 +71,7 @@ dependencies {
     implementation(libs.androidx.core.ktx.v1120)
     implementation(libs.mapbox.maps)
     implementation(libs.play.services.location)
+    implementation(libs.androidx.material.icons.extended)
 
 
     // BLE (already part of Android SDK)

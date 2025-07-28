@@ -54,7 +54,7 @@ material-v190 = { module = "com.google.android.material:material", version.ref =
 mapbox-maps = { module = "com.mapbox.maps:android", version.ref = "mapbox" }
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 accompanist-flowlayout = { module = "com.google.accompanist:accompanist-flowlayout", version.ref = "accompanist" }
-
+androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

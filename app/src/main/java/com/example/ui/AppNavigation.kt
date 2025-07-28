@@ -9,8 +9,10 @@ import com.example.hyperlocal.CriteriaData
 import com.example.hyperlocal.OnboardingViewModel
 import com.example.ui.onboarding.OnboardingGenderScreen
 import com.example.ui.onboarding.OnboardingVibeScreen
+import com.example.ui.onboarding.WelcomeScreen // <-- Import the new screen
 
 object Routes {
+    const val WELCOME = "welcome" // <-- Add new route
     const val GENDER_SELECTION = "gender"
     const val MY_VIBE_SELECTION = "my_vibe"
     const val THEIR_VIBE_SELECTION = "their_vibe"
@@ -22,7 +24,14 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val onboardingViewModel: OnboardingViewModel = viewModel()
 
-    NavHost(navController = navController, startDestination = Routes.GENDER_SELECTION) {
+    // --- FIX: Change the startDestination to the new Welcome screen ---
+    NavHost(navController = navController, startDestination = Routes.WELCOME) {
+        composable(Routes.WELCOME) {
+            WelcomeScreen {
+                // Navigate to the first step of onboarding
+                navController.navigate(Routes.GENDER_SELECTION)
+            }
+        }
         composable(Routes.GENDER_SELECTION) {
             OnboardingGenderScreen { gender ->
                 onboardingViewModel.onGenderSelected(gender)
@@ -46,8 +55,7 @@ fun AppNavigation() {
                 onboardingViewModel.onTheirVibesSelected(indices)
                 // TODO: Save the completed profile
                 navController.navigate(Routes.MAIN_SCREEN) {
-                    // Clear the onboarding back stack
-                    popUpTo(Routes.GENDER_SELECTION) { inclusive = true }
+                    popUpTo(Routes.WELCOME) { inclusive = true } // Clear the entire onboarding back stack
                 }
             }
         }
