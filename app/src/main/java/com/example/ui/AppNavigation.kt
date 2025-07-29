@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.hyperlocal.*
+import com.example.ui.MainScreen
 import com.example.ui.onboarding.OnboardingGenderScreen
 import com.example.ui.onboarding.OnboardingVibeScreen
 import com.example.ui.onboarding.WelcomeScreen

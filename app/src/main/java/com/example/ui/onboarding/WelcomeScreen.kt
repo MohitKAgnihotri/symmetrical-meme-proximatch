@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 fun WelcomeScreen(
     onGetStarted: () -> Unit
 ) {
+    // This Scaffold no longer has a topBar
     Scaffold(
         bottomBar = {
             Button(
@@ -40,8 +41,7 @@ fun WelcomeScreen(
         ) {
             Text(
                 "Welcome to ProxiMatch",
-                style = MaterialTheme.typography.headlineLarge,
-                textAlign = TextAlign.Center
+                style = MaterialTheme.typography.headlineLarge
             )
             Spacer(Modifier.height(16.dp))
             Text(

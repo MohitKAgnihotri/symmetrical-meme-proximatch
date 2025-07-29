@@ -1,51 +1,54 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun ActionBottomBar(
+    isSweeping: Boolean,
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit
 ) {
-    Surface(
-        color = Color.Black.copy(alpha = 0.2f),
-        shape = MaterialTheme.shapes.medium,
+    // We remove the Surface and glassmorphism modifier completely.
+    // A simple Box is used to position the button at the bottom center.
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-            // --- FIX: Apply the glassmorphism modifier here ---
-            .glassmorphism()
+            .fillMaxSize()
+            .padding(bottom = 32.dp), // Add some padding from the absolute bottom
+        contentAlignment = Alignment.BottomCenter
     ) {
-        Row(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            OutlinedButton(
-                onClick = onStartClicked,
-                border = BorderStroke(1.dp, Color(0xFF03A9F4)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF03A9F4))
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Start")
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Start")
-            }
-            OutlinedButton(
+        if (isSweeping) {
+            // Show Stop button as a solid, semi-transparent button
+            Button(
                 onClick = onStopClicked,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(alpha = 0.7f))
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Black.copy(alpha = 0.5f),
+                    contentColor = Color.White.copy(alpha = 0.8f)
+                )
             ) {
                 Icon(Icons.Default.Stop, contentDescription = "Stop")
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                 Text("Stop")
+            }
+        } else {
+            // Show Start button as a solid, themed button
+            Button(
+                onClick = onStartClicked,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6200EE) // A nice purple from your theme
+                )
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = "Start")
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Start")
             }
         }
     }

@@ -1,4 +1,4 @@
-package com.example.hyperlocal.ui
+package com.example.ui
 
 import android.Manifest
 import android.app.Activity
@@ -82,9 +82,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
         Scaffold(
             containerColor = Color.Transparent,
-            // --- FIX: The topBar has been removed ---
             bottomBar = {
+                // --- FIX: Pass the 'isSweeping' state to the bottom bar ---
                 ActionBottomBar(
+                    isSweeping = isSweeping,
                     onStartClicked = {
                         if (checkBLEPermissions(context)) {
                             viewModel.start(context)
@@ -111,7 +112,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     .padding(paddingValues)
                     .padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
             ) {
-                if (matches.isEmpty()) {
+                if (matches.isEmpty() && !isSweeping) { // Also hide text when sweeping
                     Text(
                         text = "Press 'Start' to scan for nearby users.",
                         color = Color.White.copy(alpha = 0.7f),
@@ -119,7 +120,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.align(Alignment.Center)
                     )
-                } else {
+                } else if (matches.isNotEmpty()) { // Only show list if there are matches
                     MatchList(
                         matches = matches,
                         modifier = Modifier.align(Alignment.BottomCenter)
@@ -141,6 +142,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 }
+
+// ... (Your PermissionRationaleDialog and other helper functions remain the same)
 
 // ... (Your PermissionRationaleDialog and other helper functions remain the same)
 
