@@ -1,5 +1,7 @@
 name: Android CI
 
+# Controls when the action will run.
+# This runs on pushes and pull requests to the "master" branch.
 on:
   push:
     branches: [ "master" ]
@@ -8,19 +10,42 @@ on:
 
 jobs:
   build:
-
+    # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 11
-      uses: actions/setup-java@v4
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
+      # Step 1: Checks out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+      # Step 2: Set up the correct JDK version for your project
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          # Use Java 17, as required by your app's build.gradle.kts
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # Step 3: Set up the Mapbox Access Token securely
+      # This step reads a GitHub Secret and puts it into your local.properties file.
+      - name: Configure Mapbox Access Token
+        env:
+          # Use the GitHub Secret named MAPBOX_PUBLIC_TOKEN
+          MAPBOX_TOKEN: ${{ secrets.MAPBOX_PUBLIC_TOKEN }}
+        run: echo "MAPBOX_PUBLIC_TOKEN=${MAPBOX_TOKEN}" > local.properties
+
+      # Step 4: Grant execute permission for the gradlew script
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Step 5: Run lint to check for code quality issues
+      - name: Run lint
+        run: ./gradlew lintDebug
+
+      # Step 6: Run unit tests
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+
+      # Step 7: Build the debug APK
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
