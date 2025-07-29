@@ -1,8 +1,9 @@
 package com.example.hyperlocal
 
-import android.annotation.SuppressLint
+import android.Manifest
 import android.content.Context
 import android.location.Location
+import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
 import com.example.ui.components.RadarTheme
 import com.example.ui.components.ThemeProvider
@@ -24,19 +25,17 @@ class MainViewModel : ViewModel() {
     private val _userLocation = MutableStateFlow<Location?>(null)
     val userLocation: StateFlow<Location?> = _userLocation
 
-    // --- NEW: State to control the radar sweep animation ---
+    // State to control the radar sweep animation
     private val _isSweeping = MutableStateFlow(false)
     val isSweeping: StateFlow<Boolean> = _isSweeping
 
-    // --- NEW: State to store the last location that triggered a zoom ---
     private var lastZoomLocation: Location? = null
 
-    @SuppressLint("MissingPermission")
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun start(context: Context) {
         if (!::bleAdvertiser.isInitialized) bleAdvertiser = BLEAdvertiser(context)
         if (!::bleScanner.isInitialized) {
             bleScanner = BLEScanner(context) { match ->
-                // Avoid adding duplicate matches
                 val currentMatches = _matchResults.value
                 if (currentMatches.none { it.id == match.id }) {
                     _matchResults.value = currentMatches + match
@@ -44,28 +43,37 @@ class MainViewModel : ViewModel() {
             }
         }
 
-        // Start scanning and begin the sweep animation
-        bleScanner.startScanning()
-        _isSweeping.value = true
+        // Get the saved user profile to advertise its criteria
+        val profile = CriteriaManager.getUserProfile(context)
+        if (profile == null) {
+            // Handle case where user profile isn't set, maybe navigate to onboarding
+            return
+        }
 
-        // Fetch location to check for zoom animation
+        val criteriaToAdvertise = CriteriaManager.encodeCriteria(profile.myCriteria)
+        val senderId = UserIdManager.getOrGenerateId(context)
+
+        bleAdvertiser.startAdvertising(criteriaToAdvertise, senderId)
+        bleScanner.startScanning()
+        _isSweeping.value = true // **FIX: Start the sweep animation**
         fetchUserLocation(context)
     }
 
-    @SuppressLint("MissingPermission")
+    @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE])
     fun stop() {
+        if (::bleAdvertiser.isInitialized) bleAdvertiser.stopAdvertising()
         if (::bleScanner.isInitialized) bleScanner.stopScanning()
-        // Stop the sweep, but keep the dots on screen
-        _isSweeping.value = false
+
+        _isSweeping.value = false // **FIX: Stop the sweep animation**
+        // Note: We keep the matches on screen (_matchResults.value is not cleared)
     }
 
-    @SuppressLint("MissingPermission")
+    @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
     fun fetchUserLocation(context: Context) {
         if (!::locationHelper.isInitialized) locationHelper = LocationHelper(context)
 
         locationHelper.fetchCurrentLocation { newLocation ->
             val lastLocation = lastZoomLocation
-            // Trigger zoom if it's the first time, or if distance is > 5km
             if (lastLocation == null || lastLocation.distanceTo(newLocation) > 5000) {
                 _userLocation.value = newLocation
                 lastZoomLocation = newLocation

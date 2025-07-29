@@ -26,9 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hyperlocal.InterestManager
 import com.example.hyperlocal.MainViewModel
 import com.example.hyperlocal.MatchResult
-import com.example.hyperlocal.ui.components.ActionBottomBar
 import com.example.hyperlocal.ui.components.InterestDialog
-import com.example.hyperlocal.ui.components.ProxiMatchTopAppBar
 import com.example.ui.components.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,10 +36,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val theme by viewModel.selectedTheme.collectAsState()
     val matches by viewModel.matchResults.collectAsState()
     val userLocation by viewModel.userLocation.collectAsState()
-
-    // Observe the new sweeping state
     val isSweeping by viewModel.isSweeping.collectAsState()
-
     var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
     var showPermissionRationale by remember { mutableStateOf(false) }
 
@@ -80,14 +75,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         RadarCanvas(
             theme = theme,
             matches = matches,
-            isSweeping = isSweeping, // Pass the state here
+            isSweeping = isSweeping,
             onDotTapped = { tapped -> selectedMatch = tapped },
             modifier = Modifier.fillMaxSize()
         )
 
         Scaffold(
             containerColor = Color.Transparent,
-            topBar = { ProxiMatchTopAppBar() },
+            // --- FIX: The topBar has been removed ---
             bottomBar = {
                 ActionBottomBar(
                     onStartClicked = {
@@ -146,6 +141,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 }
+
+// ... (Your PermissionRationaleDialog and other helper functions remain the same)
 
 @Composable
 fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
