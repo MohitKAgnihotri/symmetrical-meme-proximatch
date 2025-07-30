@@ -25,7 +25,6 @@ class MainViewModel : ViewModel() {
     private val _userLocation = MutableStateFlow<Location?>(null)
     val userLocation: StateFlow<Location?> = _userLocation
 
-    // State to control the radar sweep animation
     private val _isSweeping = MutableStateFlow(false)
     val isSweeping: StateFlow<Boolean> = _isSweeping
 
@@ -43,19 +42,19 @@ class MainViewModel : ViewModel() {
             }
         }
 
-        // Get the saved user profile to advertise its criteria
         val profile = CriteriaManager.getUserProfile(context)
         if (profile == null) {
-            // Handle case where user profile isn't set, maybe navigate to onboarding
             return
         }
 
         val criteriaToAdvertise = CriteriaManager.encodeCriteria(profile.myCriteria)
         val senderId = UserIdManager.getOrGenerateId(context)
+        val genderToAdvertise = profile.gender
 
-        bleAdvertiser.startAdvertising(criteriaToAdvertise, senderId)
+        // Pass the gender to the advertiser.
+        bleAdvertiser.startAdvertising(criteriaToAdvertise, senderId, genderToAdvertise)
         bleScanner.startScanning()
-        _isSweeping.value = true // **FIX: Start the sweep animation**
+        _isSweeping.value = true
         fetchUserLocation(context)
     }
 
@@ -64,8 +63,7 @@ class MainViewModel : ViewModel() {
         if (::bleAdvertiser.isInitialized) bleAdvertiser.stopAdvertising()
         if (::bleScanner.isInitialized) bleScanner.stopScanning()
 
-        _isSweeping.value = false // **FIX: Stop the sweep animation**
-        // Note: We keep the matches on screen (_matchResults.value is not cleared)
+        _isSweeping.value = false
     }
 
     @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)

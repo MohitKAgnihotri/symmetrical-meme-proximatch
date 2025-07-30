@@ -1,34 +1,29 @@
 package com.example.hyperlocal
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
-import android.bluetooth.le.*
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
-import android.os.ParcelUuid
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.example.hyperlocal.CriteriaManager.calculateMatchPercentage
 import com.example.hyperlocal.CriteriaManager.decodeCriteria
-import java.util.*
 
 class BLEScanner(
     private val context: Context,
     private val onMatchFound: (MatchResult) -> Unit
 ) {
-    private var scanner: BluetoothLeScanner? = null
+    private var scanner = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager)
+        .adapter.bluetoothLeScanner
     private var callback: ScanCallback? = null
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun startScanning() {
-        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val bluetoothAdapter = bluetoothManager.adapter
-        if (!bluetoothAdapter.isEnabled) return
-
-        scanner = bluetoothAdapter.bluetoothLeScanner
-
         val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(UUID.fromString("0000180D-0000-1000-8000-00805f9b34fb")))
+            .setServiceUuid(BLEConstants.SERVICE_PARCEL_UUID) // Use the constant here
             .build()
 
         val settings = ScanSettings.Builder()
@@ -37,24 +32,22 @@ class BLEScanner(
 
         callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val serviceData = result.scanRecord
-                    ?.getServiceData(ParcelUuid(UUID.fromString("0000180D-0000-1000-8000-00805f9b34fb")))
-
+                val serviceData = result.scanRecord?.getServiceData(BLEConstants.SERVICE_PARCEL_UUID)
                 val rssi = result.rssi
                 val ourId = String(UserIdManager.getOrGenerateId(context), Charsets.UTF_8)
 
-                if (serviceData != null && serviceData.size >= 12) {
-                    val criteriaBytes = serviceData.copyOfRange(0, 4)
-                    val senderId = serviceData.copyOfRange(4, 12).toString(Charsets.UTF_8)
+                if (serviceData != null && serviceData.size >= 13) { // 1 (gender) + 4 (criteria) + 8 (id)
+                    val genderIndex = serviceData[0].toInt()
+                    val receivedGender = Gender.values().getOrNull(genderIndex) ?: Gender.PRIVATE
+
+                    val criteriaBytes = serviceData.copyOfRange(1, 5) // Now starts at index 1
+                    val senderId = serviceData.copyOfRange(5, 13).toString(Charsets.UTF_8) // And this starts at 5
 
                     if (senderId != ourId) {
                         val theirPrefs = decodeCriteria(criteriaBytes)
-
-                        // --- FIX: Use the new getUserProfile function ---
                         val ourProfile = CriteriaManager.getUserProfile(context)
 
                         if (ourProfile != null) {
-                            // Use the criteria we're looking for in others
                             val matchPercent = calculateMatchPercentage(ourProfile.theirCriteria, theirPrefs)
 
                             onMatchFound(
@@ -62,11 +55,10 @@ class BLEScanner(
                                     id = senderId,
                                     matchPercentage = matchPercent,
                                     distanceRssi = rssi,
-                                    // TODO: Update BLE service data to include a byte for gender
-                                    gender = Gender.PRIVATE
+                                    gender = receivedGender // Use the parsed gender
                                 )
                             )
-                            Log.d("BLEScanner", "Detected $senderId @ $rssi dBm → $matchPercent% match")
+                            Log.d("BLEScanner", "Detected $senderId ($receivedGender) @ $rssi dBm → $matchPercent% match")
                         }
                     }
                 }
