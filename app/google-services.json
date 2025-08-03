@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "767023026445",
+    "project_id": "proxilocal-5e47f",
+    "storage_bucket": "proxilocal-5e47f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:767023026445:android:acce692505e5f113942044",
+        "android_client_info": {
+          "package_name": "com.example.hyperlocal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6xq-d0iVeTqibbT32iBAKMrYMSNxYSCE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

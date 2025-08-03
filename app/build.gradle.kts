@@ -1,8 +1,10 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
     alias(libs.plugins.kotlin.compose)
-
 }
 
 android {
@@ -15,7 +17,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -30,56 +31,84 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled  = true // Enable desugaring for minSdk 24
     }
 
     kotlinOptions {
         jvmTarget = "17"
     }
 
-    // --- FIX: ADD THIS BLOCK ---
     packaging {
         jniLibs {
-            // This forces Gradle to correctly align all .so files for 16 KB page size compatibility.
             useLegacyPackaging = true
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    signingConfigs {
+        create("release") {
+            val propFile = project.rootProject.file("local.properties")
+            val properties = Properties()
+            if (propFile.exists()) {
+                properties.load(propFile.inputStream())
+            }
+            keyAlias = properties.getProperty("MYAPP_RELEASE_KEY_ALIAS")
+            keyPassword = properties.getProperty("MYAPP_RELEASE_KEY_PASSWORD")
+            storeFile = if (properties.getProperty("MYAPP_RELEASE_STORE_FILE") != null) {
+                project.rootProject.file(properties.getProperty("MYAPP_RELEASE_STORE_FILE"))
+            } else {
+                null
+            }
+            storePassword = properties.getProperty("MYAPP_RELEASE_STORE_PASSWORD")
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
 }
 
 dependencies {
-    // Jetpack Compose BOM
-    //implementation(platform(libs.androidx.compose.bom.v20231001))
+    // Firebase BoM (must be declared first)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.analytics)
+    implementation(libs.play.services.auth) // For Google Sign-In
 
-    // Compose UI
+    // Jetpack Compose and other dependencies
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.ui)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.ui.tooling.preview)
     debugImplementation(libs.androidx.ui.tooling)
     implementation("io.coil-kt:coil-compose:2.6.0")
-
-    // Lifecycle + ViewModel
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Coroutines and Flow
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.accompanist.systemuicontroller)
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.core.ktx.v1120)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.mapbox.maps)
     implementation(libs.play.services.location)
     implementation(libs.androidx.material.icons.extended)
 
+    // Desugaring for minSdk 24
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
-    // BLE (already part of Android SDK)
-
-    // Optional testing
+    // Testing dependencies
     testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit.v121)
-    androidTestImplementation(libs.androidx.espresso.core.v361)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
 }
