@@ -1,6 +1,14 @@
 package com.example.hyperlocal.ui
 
+import android.app.Activity
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -12,6 +20,15 @@ import com.example.ui.MainScreen
 import com.example.ui.onboarding.OnboardingGenderScreen
 import com.example.ui.onboarding.OnboardingVibeScreen
 import com.example.ui.onboarding.WelcomeScreen
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.auth
+
 
 object Routes {
     const val WELCOME = "welcome"
@@ -27,19 +44,22 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val onboardingViewModel: OnboardingViewModel = viewModel()
     val context = LocalContext.current
+    val auth: FirebaseAuth = Firebase.auth
 
-    val startDestination = if (CriteriaManager.getUserProfile(context) != null) {
-        Routes.MAIN_SCREEN
-    } else {
-        Routes.WELCOME
+    // Determine the correct starting screen
+    val startDestination = when {
+        auth.currentUser != null -> Routes.MAIN_SCREEN // If user is already logged in, go to main.
+        CriteriaManager.getUserProfile(context) != null -> Routes.MAIN_SCREEN // If user completed anonymous setup, go to main.
+        else -> Routes.WELCOME // Otherwise, show the welcome screen.
     }
 
     NavHost(navController = navController, startDestination = startDestination) {
         // --- Onboarding Routes ---
         composable(Routes.WELCOME) {
-            WelcomeScreen {
-                navController.navigate(Routes.GENDER_SELECTION)
-            }
+            WelcomeScreen(
+                onLogin = { navController.navigate(Routes.LOGIN) },
+                onContinueAnonymously = { navController.navigate(Routes.GENDER_SELECTION) }
+            )
         }
         composable(Routes.GENDER_SELECTION) {
             OnboardingGenderScreen { gender ->
@@ -84,16 +104,58 @@ fun AppNavigation() {
 
         // --- Main App Routes ---
         composable(Routes.MAIN_SCREEN) {
-            // The error indicates your MainScreen composable does not accept an 'onGoToLogin' parameter.
-            // You will need to add a button inside MainScreen that uses the NavController to navigate to Routes.LOGIN.
-            MainScreen()
+            val loginViewModel: LoginViewModel = viewModel()
+            val userState by loginViewModel.uiState.collectAsState()
+            MainScreen(
+                user = userState.user ?: auth.currentUser,
+                onGoToLogin = { navController.navigate(Routes.LOGIN) },
+                onLogout = {
+                    loginViewModel.signOut()
+                    // After logout, go back to the welcome screen and clear the history
+                    navController.navigate(Routes.WELCOME) {
+                        popUpTo(Routes.MAIN_SCREEN) { inclusive = true }
+                    }
+                }
+            )
         }
 
         composable(Routes.LOGIN) {
-            // The errors indicate your LoginScreen composable expects individual lambdas for each sign-in action
-            // instead of a ViewModel. This has been corrected below.
+            val loginViewModel: LoginViewModel = viewModel()
+            val uiState by loginViewModel.uiState.collectAsState()
+            val googleSignInClient: GoogleSignInClient = remember {
+                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestIdToken(context.getString(R.string.default_web_client_id))
+                    .requestEmail()
+                    .build()
+                GoogleSignIn.getClient(context, gso)
+            }
+
+            val googleSignInLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                    try {
+                        val account = task.getResult(ApiException::class.java)!!
+                        val credential = GoogleAuthProvider.getCredential(account.idToken!!, null)
+                        loginViewModel.signInWithGoogle(credential)
+                    } catch (e: ApiException) {
+                        Log.w("AppNavigation", "Google sign in failed", e)
+                    }
+                }
+            }
+
+            LaunchedEffect(uiState) {
+                if (uiState.user != null) {
+                    // On successful login, navigate to the main screen and clear the back stack
+                    navController.navigate(Routes.MAIN_SCREEN) {
+                        popUpTo(Routes.WELCOME) { inclusive = true }
+                    }
+                }
+            }
+
             LoginScreen(
-                onGoogleSignIn = { /* TODO: Implement Google Sign-In logic here or in a ViewModel */ },
+                onGoogleSignIn = { googleSignInLauncher.launch(googleSignInClient.signInIntent) },
                 onAppleSignIn = { /* TODO: Implement Apple Sign-In */ },
                 onFacebookSignIn = { /* TODO: Implement Facebook Sign-In */ },
                 onInstagramSignIn = { /* TODO: Implement Instagram Sign-In */ },

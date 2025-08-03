@@ -16,21 +16,10 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WelcomeScreen(
-    onGetStarted: () -> Unit
+    onLogin: () -> Unit,
+    onContinueAnonymously: () -> Unit
 ) {
-    // This Scaffold no longer has a topBar
-    Scaffold(
-        bottomBar = {
-            Button(
-                onClick = onGetStarted,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text("Get Started")
-            }
-        }
-    ) { paddingValues ->
+    Scaffold { paddingValues ->
         Column(
             modifier = Modifier
                 .padding(paddingValues)
@@ -70,6 +59,22 @@ fun WelcomeScreen(
                 title = "Focus on Wellbeing",
                 description = "Connect based on shared vibes and interests that matter to you, fostering more genuine and less stressful interactions."
             )
+
+            Spacer(Modifier.weight(1f)) // Pushes buttons to the bottom
+
+            Button(
+                onClick = onLogin,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Login / Register for Premium")
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onContinueAnonymously,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Continue Anonymously")
+            }
         }
     }
 }

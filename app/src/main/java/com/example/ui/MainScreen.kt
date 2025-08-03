@@ -12,6 +12,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,10 +31,16 @@ import com.example.hyperlocal.MainViewModel
 import com.example.hyperlocal.MatchResult
 import com.example.hyperlocal.ui.components.InterestDialog
 import com.example.ui.components.*
+import com.google.firebase.auth.FirebaseUser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel = viewModel()) {
+fun MainScreen(
+    viewModel: MainViewModel = viewModel(),
+    user: FirebaseUser?,
+    onGoToLogin: () -> Unit,
+    onLogout: () -> Unit
+) {
     val context = LocalContext.current
     val theme by viewModel.selectedTheme.collectAsState()
     val matches by viewModel.matchResults.collectAsState()
@@ -81,9 +90,33 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         )
 
         Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("ProxiMatch Radar", color = Color.White) },
+                    actions = {
+                        if (user != null) {
+                            // If user is logged in, show their email and a logout button
+                            Text(
+                                text = user.email ?: "Logged In",
+                                color = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.padding(end = 8.dp),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            IconButton(onClick = onLogout) {
+                                Icon(Icons.Default.Logout, contentDescription = "Logout", tint = Color.White)
+                            }
+                        } else {
+                            // If user is not logged in, show the "Go Premium" button
+                            IconButton(onClick = onGoToLogin) {
+                                Icon(Icons.Default.Star, contentDescription = "Go Premium", tint = Color.Yellow)
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+            },
             containerColor = Color.Transparent,
             bottomBar = {
-                // --- FIX: Pass the 'isSweeping' state to the bottom bar ---
                 ActionBottomBar(
                     isSweeping = isSweeping,
                     onStartClicked = {
@@ -112,7 +145,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     .padding(paddingValues)
                     .padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
             ) {
-                if (matches.isEmpty() && !isSweeping) { // Also hide text when sweeping
+                if (matches.isEmpty() && !isSweeping) {
                     Text(
                         text = "Press 'Start' to scan for nearby users.",
                         color = Color.White.copy(alpha = 0.7f),
@@ -120,7 +153,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.align(Alignment.Center)
                     )
-                } else if (matches.isNotEmpty()) { // Only show list if there are matches
+                } else if (matches.isNotEmpty()) {
                     MatchList(
                         matches = matches,
                         modifier = Modifier.align(Alignment.BottomCenter)
@@ -142,10 +175,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 }
-
-// ... (Your PermissionRationaleDialog and other helper functions remain the same)
-
-// ... (Your PermissionRationaleDialog and other helper functions remain the same)
 
 @Composable
 fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
