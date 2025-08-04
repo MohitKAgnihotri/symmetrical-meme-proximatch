@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -22,7 +23,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.*
-import com.example.hyperlocal.R // <-- Import the R class
+import com.example.hyperlocal.R
 import com.google.firebase.Firebase
 
 object Routes {
@@ -43,8 +44,8 @@ fun AppNavigation() {
     val auth: FirebaseAuth = Firebase.auth
 
     val startDestination = when {
-        auth.currentUser != null -> Routes.MAIN_SCREEN
-        CriteriaManager.getUserProfile(context) != null -> Routes.MAIN_SCREEN
+        // Always start at welcome to let the user decide.
+        // The check for existing profile will happen after login.
         else -> Routes.WELCOME
     }
 
@@ -137,10 +138,20 @@ fun AppNavigation() {
                 }
             }
 
+            // This effect handles the post-login navigation logic.
             LaunchedEffect(uiState) {
                 if (uiState.user != null) {
-                    navController.navigate(Routes.MAIN_SCREEN) {
-                        popUpTo(Routes.WELCOME) { inclusive = true }
+                    // Check if a profile exists.
+                    if (CriteriaManager.getUserProfile(context) == null) {
+                        // If no profile, redirect to onboarding.
+                        navController.navigate(Routes.GENDER_SELECTION) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        }
+                    } else {
+                        // If profile exists, go to the main screen.
+                        navController.navigate(Routes.MAIN_SCREEN) {
+                            popUpTo(Routes.WELCOME) { inclusive = true }
+                        }
                     }
                 }
             }

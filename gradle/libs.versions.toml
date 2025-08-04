@@ -26,6 +26,7 @@ mapbox = "11.7.1"
 playServicesAuth = "21.4.0"
 playServicesLocation = "21.3.0"
 accompanist = "0.32.0"
+billingKtx = "6.1.0"
 
 [libraries]
 accompanist-systemuicontroller = { module = "com.google.accompanist:accompanist-systemuicontroller", version.ref = "accompanistSystemuicontroller" }
@@ -61,6 +62,7 @@ play-services-auth = { module = "com.google.android.gms:play-services-auth", ver
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 accompanist-flowlayout = { module = "com.google.accompanist:accompanist-flowlayout", version.ref = "accompanist" }
 androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+play-billing = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billingKtx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

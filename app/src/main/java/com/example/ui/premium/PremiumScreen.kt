@@ -1,5 +1,7 @@
 package com.example.ui.premium
 
+import android.app.Activity
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -10,17 +12,31 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PremiumScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    premiumViewModel: PremiumViewModel = viewModel()
 ) {
     var discountCode by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val product by premiumViewModel.product.collectAsState()
+    val isSubscribed by premiumViewModel.isSubscribed.collectAsState()
+    val error by premiumViewModel.error.collectAsState()
+
+    // Show a toast for any errors
+    LaunchedEffect(error) {
+        error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -70,27 +86,48 @@ fun PremiumScreen(
             Spacer(modifier = Modifier.weight(1f))
 
             // Pricing
-            Text(
-                "Only \$9.99/month",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            if (product != null && !isSubscribed) {
+                Text(
+                    "Only ${product!!.formattedPrice}/month",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            } else if (isSubscribed) {
+                Text(
+                    "You are a Premium Member!",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             // Discount Code
-            OutlinedTextField(
-                value = discountCode,
-                onValueChange = { discountCode = it },
-                label = { Text("Discount Code") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(16.dp))
+            if (!isSubscribed) {
+                OutlinedTextField(
+                    value = discountCode,
+                    onValueChange = { discountCode = it },
+                    label = { Text("Discount Code") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             Button(
-                onClick = { /* TODO: Handle subscription logic */ },
-                modifier = Modifier.fillMaxWidth()
+                onClick = {
+                    premiumViewModel.launchPurchaseFlow(context as Activity)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = product != null && !isSubscribed
             ) {
-                Text("Subscribe Now", fontSize = 18.sp)
+                if (product == null && !isSubscribed) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+                } else if (isSubscribed) {
+                    Text("Subscribed", fontSize = 18.sp)
+                } else {
+                    Text("Subscribe Now", fontSize = 18.sp)
+                }
             }
         }
     }

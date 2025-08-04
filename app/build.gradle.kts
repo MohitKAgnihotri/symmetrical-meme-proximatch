@@ -101,6 +101,7 @@ dependencies {
     implementation(libs.mapbox.maps)
     implementation(libs.play.services.location)
     implementation(libs.androidx.material.icons.extended)
+    implementation(libs.play.billing)
 
     // Desugaring for minSdk 24
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
