@@ -27,6 +27,7 @@ import com.google.android.gms.common.api.ApiException
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.OAuthProvider
 import com.google.firebase.auth.auth
 
 
@@ -156,10 +157,28 @@ fun AppNavigation() {
 
             LoginScreen(
                 onGoogleSignIn = { googleSignInLauncher.launch(googleSignInClient.signInIntent) },
-                onAppleSignIn = { /* TODO: Implement Apple Sign-In */ },
+                onAppleSignIn = {
+                    val provider = OAuthProvider.newBuilder("apple.com")
+                    auth.startActivityForSignInWithProvider(context as Activity, provider.build())
+                        .addOnSuccessListener {
+                            // User signed in
+                        }
+                        .addOnFailureListener { e ->
+                            Log.w("AppNavigation", "Apple sign in failed", e)
+                        }
+                },
                 onFacebookSignIn = { /* TODO: Implement Facebook Sign-In */ },
                 onInstagramSignIn = { /* TODO: Implement Instagram Sign-In */ },
-                onGitHubSignIn = { /* TODO: Implement GitHub Sign-In */ },
+                onGitHubSignIn = {
+                    val provider = OAuthProvider.newBuilder("github.com")
+                    auth.startActivityForSignInWithProvider(context as Activity, provider.build())
+                        .addOnSuccessListener {
+                            // User signed in
+                        }
+                        .addOnFailureListener { e ->
+                            Log.w("AppNavigation", "GitHub sign in failed", e)
+                        }
+                },
                 onDismiss = { navController.popBackStack() }
             )
         }
