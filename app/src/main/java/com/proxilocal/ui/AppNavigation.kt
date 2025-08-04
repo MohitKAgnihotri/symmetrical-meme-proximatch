@@ -1,3 +1,4 @@
+// UPDATED: AppNavigation.kt
 package com.proxilocal.ui
 
 import android.app.Activity
@@ -42,64 +43,83 @@ fun AppNavigation() {
     val context = LocalContext.current
     val auth: FirebaseAuth = Firebase.auth
 
-    val startDestination = when {
-        auth.currentUser != null -> Routes.MAIN_SCREEN
-        CriteriaManager.getUserProfile(context) != null -> Routes.MAIN_SCREEN
-        else -> Routes.WELCOME
-    }
-
-    NavHost(navController = navController, startDestination = startDestination) {
+    NavHost(navController = navController, startDestination = Routes.WELCOME) {
         composable(Routes.WELCOME) {
             WelcomeScreen(
                 onLogin = { navController.navigate(Routes.LOGIN) },
-                onContinueAnonymously = { navController.navigate(Routes.GENDER_SELECTION) }
+                onContinueAnonymously = {
+                    val profile = CriteriaManager.getUserProfile(context)
+                    if (profile.gender == Gender.PRIVATE ||
+                        profile.myCriteria.all { !it } ||
+                        profile.theirCriteria.all { !it }) {
+                        navController.navigate(Routes.GENDER_SELECTION)
+                    } else {
+                        navController.navigate(Routes.MAIN_SCREEN)
+                    }
+                }
             )
         }
         composable(Routes.GENDER_SELECTION) {
-            OnboardingGenderScreen { gender ->
-                onboardingViewModel.onGenderSelected(gender)
-                navController.navigate(Routes.MY_VIBE_SELECTION)
-            }
+            OnboardingGenderScreen(
+                onGenderSelected = { gender ->
+                    onboardingViewModel.onGenderSelected(gender)
+                    navController.navigate(Routes.MY_VIBE_SELECTION)
+                },
+                onLoginRequested = { navController.navigate(Routes.LOGIN) }
+            )
         }
         composable(Routes.MY_VIBE_SELECTION) {
             OnboardingVibeScreen(
                 title = "Step 2: My Vibe",
-                criteria = CriteriaData.allCriteria
-            ) { indices ->
-                onboardingViewModel.onMyVibesSelected(indices)
-                navController.navigate(Routes.THEIR_VIBE_SELECTION)
-            }
+                criteria = CriteriaData.allCriteria,
+                onVibesSelected = { indices ->
+                    onboardingViewModel.onMyVibesSelected(indices)
+                    navController.navigate(Routes.THEIR_VIBE_SELECTION)
+                },
+                onLoginRequested = { navController.navigate(Routes.LOGIN) }
+            )
         }
         composable(Routes.THEIR_VIBE_SELECTION) {
             OnboardingVibeScreen(
                 title = "Step 3: Their Vibe",
-                criteria = CriteriaData.allCriteria
-            ) { indices ->
-                onboardingViewModel.onTheirVibesSelected(indices)
-                val finalGender = onboardingViewModel.gender.value
-                val myVibes = onboardingViewModel.myCriteria.value
-                if (finalGender != null) {
-                    val userProfile = UserProfile(
-                        gender = finalGender,
-                        myCriteria = List(64) { i -> i in myVibes },
-                        theirCriteria = List(64) { i -> i in indices }
-                    )
-                    CriteriaManager.saveUserProfile(context, userProfile)
-                }
-                navController.navigate(Routes.MAIN_SCREEN) { popUpTo(Routes.WELCOME) { inclusive = true } }
-            }
+                criteria = CriteriaData.allCriteria,
+                onVibesSelected = { indices ->
+                    onboardingViewModel.onTheirVibesSelected(indices)
+                    val finalGender = onboardingViewModel.gender.value
+                    val myVibes = onboardingViewModel.myCriteria.value
+                    if (finalGender != null) {
+                        val userProfile = UserProfile(
+                            gender = finalGender,
+                            myCriteria = List(64) { i -> i in myVibes },
+                            theirCriteria = List(64) { i -> i in indices }
+                        )
+                        CriteriaManager.saveUserProfile(context, userProfile)
+                    }
+                    navController.navigate(Routes.MAIN_SCREEN) { popUpTo(Routes.WELCOME) { inclusive = true } }
+                },
+                onLoginRequested = { navController.navigate(Routes.LOGIN) }
+            )
         }
         composable(Routes.MAIN_SCREEN) {
             val loginViewModel: LoginViewModel = viewModel()
             val userState by loginViewModel.uiState.collectAsState()
-            MainScreen(
-                user = userState.user ?: auth.currentUser,
-                onGoToLogin = { navController.navigate(Routes.LOGIN) },
-                onLogout = {
-                    loginViewModel.signOut()
-                    navController.navigate(Routes.WELCOME) { popUpTo(Routes.MAIN_SCREEN) { inclusive = true } }
-                }
-            )
+
+            val profile = CriteriaManager.getUserProfile(context)
+            val isProfileValid = profile.gender != Gender.PRIVATE &&
+                    profile.myCriteria.any { it } && profile.theirCriteria.any { it }
+
+            if (!isProfileValid) {
+                navController.navigate(Routes.GENDER_SELECTION)
+            } else {
+                MainScreen(
+                    user = userState.user ?: auth.currentUser,
+                    onGoToLogin = { navController.navigate(Routes.LOGIN) },
+                    onLogout = {
+                        loginViewModel.signOut()
+                        navController.navigate(Routes.WELCOME) { popUpTo(Routes.MAIN_SCREEN) { inclusive = true } }
+                    }
+                )
+            }
         }
         composable(Routes.LOGIN) {
             val loginViewModel: LoginViewModel = viewModel()
@@ -124,11 +144,7 @@ fun AppNavigation() {
 
             LaunchedEffect(uiState) {
                 if (uiState.user != null) {
-                    if (CriteriaManager.getUserProfile(context) == null) {
-                        navController.navigate(Routes.GENDER_SELECTION) { popUpTo(Routes.LOGIN) { inclusive = true } }
-                    } else {
-                        navController.navigate(Routes.MAIN_SCREEN) { popUpTo(Routes.WELCOME) { inclusive = true } }
-                    }
+                    navController.navigate(Routes.WELCOME) { popUpTo(Routes.LOGIN) { inclusive = true } }
                 }
             }
 

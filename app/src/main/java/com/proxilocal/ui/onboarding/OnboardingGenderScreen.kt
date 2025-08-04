@@ -14,7 +14,8 @@ import com.proxilocal.hyperlocal.Gender
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingGenderScreen(
-    onGenderSelected: (Gender) -> Unit
+    onGenderSelected: (Gender) -> Unit,
+    onLoginRequested: () -> Unit
 ) {
     var selectedGender by remember { mutableStateOf<Gender?>(null) }
     val genders = Gender.values()
@@ -22,12 +23,22 @@ fun OnboardingGenderScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text("Step 1: Select Your Gender") }) },
         bottomBar = {
-            Button(
-                onClick = { selectedGender?.let(onGenderSelected) },
-                enabled = selectedGender != null,
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
-            ) {
-                Text("Next")
+            Column {
+                TextButton(
+                    onClick = onLoginRequested,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Already have an account? Sign in")
+                }
+                Button(
+                    onClick = { selectedGender?.let(onGenderSelected) },
+                    enabled = selectedGender != null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text("Next")
+                }
             }
         }
     ) { paddingValues ->

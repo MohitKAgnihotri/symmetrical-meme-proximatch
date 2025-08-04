@@ -11,13 +11,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.proxilocal.hyperlocal.Criterion
 
-// FIX: Add this annotation to use FlowRow
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingVibeScreen(
     title: String,
     criteria: List<Criterion>,
-    onVibesSelected: (List<Int>) -> Unit
+    onVibesSelected: (List<Int>) -> Unit,
+    onLoginRequested: () -> Unit
 ) {
     val selectedIndices = remember { mutableStateListOf<Int>() }
     val groupedCriteria = criteria.groupBy { it.category }
@@ -25,16 +25,28 @@ fun OnboardingVibeScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text(title) }) },
         bottomBar = {
-            Button(
-                onClick = { onVibesSelected(selectedIndices.toList()) },
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
-            ) {
-                Text("Next")
+            Column {
+                TextButton(
+                    onClick = onLoginRequested,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Already have an account? Sign in")
+                }
+                Button(
+                    onClick = { onVibesSelected(selectedIndices.toList()) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text("Next")
+                }
             }
         }
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier.padding(paddingValues).padding(16.dp),
+            modifier = Modifier
+                .padding(paddingValues)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             groupedCriteria.forEach { (category, items) ->
@@ -45,7 +57,6 @@ fun OnboardingVibeScreen(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    // FIX: Use horizontalArrangement for spacing
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
@@ -58,7 +69,7 @@ fun OnboardingVibeScreen(
                                     if (isSelected) {
                                         selectedIndices.remove(index)
                                     } else if (criterion.isPremium) {
-                                        // TODO: Add logic for premium upsell
+                                        // TODO: Intercept and navigate to premium screen if not subscribed
                                     } else {
                                         selectedIndices.add(index)
                                     }
