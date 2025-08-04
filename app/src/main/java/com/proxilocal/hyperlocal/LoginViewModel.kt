@@ -1,4 +1,3 @@
-// UPDATED WITH VERBOSE LOGGING: LoginViewModel.kt
 package com.proxilocal.hyperlocal
 
 import android.util.Log
@@ -15,7 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 /**
- * Holds UI‑state for the login screen.
+ * UI state for the login flow.
  */
 data class LoginUiState(
     val isLoading: Boolean = false,
@@ -24,14 +23,12 @@ data class LoginUiState(
 )
 
 /**
- * Lightweight ViewModel that wraps FirebaseAuth sign‑in / sign‑out and exposes
- * a single [LoginUiState] flow.  ✳️  Added **verbose logging** for easier debugging.
+ * ViewModel that wraps FirebaseAuth sign‑in/out, with verbose logging
+ * and convenience functions for loading & error handling.
  */
 class LoginViewModel : ViewModel() {
 
-    companion object {
-        private const val TAG = "LoginViewModel"
-    }
+    companion object { private const val TAG = "LoginViewModel" }
 
     private val auth: FirebaseAuth = Firebase.auth
 
@@ -39,49 +36,48 @@ class LoginViewModel : ViewModel() {
     val uiState: StateFlow<LoginUiState> = _uiState
 
     init {
-        // Emit current user on startup (if any)
-        val existing = auth.currentUser
-        Log.d(TAG, "init ➜ currentUser=${existing?.uid ?: "null"}")
-        _uiState.value = LoginUiState(user = existing)
+        Log.d(TAG, "init ➜ currentUser=${auth.currentUser?.uid}")
+        _uiState.value = LoginUiState(user = auth.currentUser)
     }
 
-    /**
-     * Generic sign‑in for Google / GitHub or any other [AuthCredential].
-     */
+    /* ───── Public helpers ───── */
+
+    /** Toggle the loading spinner */
+    fun setLoading(flag: Boolean) {
+        _uiState.value = _uiState.value.copy(isLoading = flag, error = null)
+    }
+
+    /** Push an error message & hide spinner */
+    fun updateError(message: String) {
+        Log.w(TAG, "updateError ➜ $message")
+        _uiState.value = _uiState.value.copy(error = message, isLoading = false)
+    }
+
+    /** Update the current FirebaseUser (clears spinner) */
+    fun updateUser(user: FirebaseUser?) {
+        Log.d(TAG, "updateUser ➜ ${user?.uid}")
+        _uiState.value = LoginUiState(user = user, isLoading = false)
+    }
+
+    /* ───── Auth actions ───── */
+
     fun signInWithCredential(credential: AuthCredential) {
         viewModelScope.launch {
-            Log.d(TAG, "signInWithCredential: provider=${credential.provider}")
-            _uiState.value = LoginUiState(isLoading = true)
+            setLoading(true)
             try {
                 val result = auth.signInWithCredential(credential).await()
                 Log.i(TAG, "signIn SUCCESS ➜ uid=${result.user?.uid}")
-                _uiState.value = LoginUiState(user = result.user, isLoading = false)
+                updateUser(result.user)
             } catch (e: Exception) {
                 Log.e(TAG, "signIn FAILURE", e)
-                _uiState.value = LoginUiState(error = e.localizedMessage, isLoading = false)
+                updateError(e.localizedMessage ?: "Authentication failed")
             }
         }
     }
 
     fun signOut() {
-        Log.d(TAG, "signOut() called. uid=${auth.currentUser?.uid}")
+        Log.d(TAG, "signOut() uid=${auth.currentUser?.uid}")
         auth.signOut()
         _uiState.value = LoginUiState()
-    }
-
-    /**
-     * Allows UI to update the current FirebaseUser after a silent sign‑in.
-     */
-    fun updateUser(user: FirebaseUser?) {
-        Log.d(TAG, "updateUser ➜ ${user?.uid ?: "null"}")
-        _uiState.value = _uiState.value.copy(user = user, isLoading = false)
-    }
-
-    /**
-     * Helper for surfacing manual error messages (e.g., ID‑token == null).
-     */
-    fun updateError(message: String) {
-        Log.w(TAG, "updateError ➜ $message")
-        _uiState.value = LoginUiState(error = message, isLoading = false)
     }
 }

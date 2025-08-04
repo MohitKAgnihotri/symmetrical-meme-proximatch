@@ -16,6 +16,7 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.OAuthProvider
 import com.google.firebase.auth.auth
@@ -122,11 +123,13 @@ fun AppNavigation() {
                 )
             }
         }
+
         composable(Routes.LOGIN) {
             val loginViewModel: LoginViewModel = viewModel()
             val uiState by loginViewModel.uiState.collectAsState()
             val currentUser by rememberUpdatedState(uiState.user)
 
+            /* ───────── Google sign‑in ───────── */
             val googleSignInLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.StartIntentSenderForResult()
             ) { result ->
@@ -137,28 +140,66 @@ fun AppNavigation() {
                         if (googleIdToken != null) {
                             val firebaseCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
                             loginViewModel.signInWithCredential(firebaseCredential)
+                        } else {
+                            loginViewModel.updateError("Google returned no ID‑token. Check SHA‑1 / OAuth config.")
                         }
                     } catch (e: ApiException) {
                         Log.w("AppNavigation", "Google sign in failed", e)
+                        loginViewModel.updateError(e.localizedMessage ?: "Google sign‑in failed")
                     }
+                } else {
+                    loginViewModel.setLoading(false)
                 }
             }
 
+            /* ───────── GitHub sign‑in ───────── */
+            fun launchGitHub() {
+                val provider = OAuthProvider.newBuilder("github.com")
+                loginViewModel.setLoading(true)
+
+                auth.startActivityForSignInWithProvider(context as Activity, provider.build())
+                    .addOnSuccessListener { result ->
+                        loginViewModel.updateUser(result.user) // success ➜ navigation handled below
+                    }
+                    .addOnCanceledListener {
+                        loginViewModel.updateError("GitHub sign‑in was cancelled.")
+                    }
+                    .addOnFailureListener { e ->
+                        if (e is FirebaseAuthUserCollisionException) {
+                            val email = e.email ?: "this email"
+                            auth.fetchSignInMethodsForEmail(email)
+                                .addOnSuccessListener { methods ->
+                                    val providerHint = when {
+                                        methods.signInMethods?.contains(GoogleAuthProvider.GOOGLE_SIGN_IN_METHOD) == true -> "Google"
+                                        methods.signInMethods?.contains("password") == true -> "Email & password"
+                                        else -> methods.signInMethods?.firstOrNull() ?: "another provider"
+                                    }
+                                    loginViewModel.updateError(
+                                        "This email is already registered via $providerHint. " +
+                                                "Please sign in with $providerHint then link GitHub under Settings."
+                                    )
+                                }
+                        } else {
+                            Log.w("AppNavigation", "GitHub sign in failed", e)
+                            loginViewModel.updateError(e.localizedMessage ?: "GitHub sign‑in failed")
+                        }
+                    }
+            }
+
+            /* ───────── Navigate away when user becomes non‑null ───────── */
             LaunchedEffect(currentUser) {
                 if (currentUser != null) {
                     delay(200)
                     val profile = CriteriaManager.getUserProfile(context)
                     val isProfileValid = profile.gender != Gender.PRIVATE &&
                             profile.myCriteria.any { it } && profile.theirCriteria.any { it }
-
-                    navController.navigate(
-                        if (isProfileValid) Routes.MAIN_SCREEN else Routes.GENDER_SELECTION
-                    ) {
+                    navController.navigate(if (isProfileValid) Routes.MAIN_SCREEN else Routes.GENDER_SELECTION) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                 }
             }
 
+            /* ───────── Render LoginScreen ───────── */
             LoginScreen(
                 onGoogleSignIn = {
                     val signInClient = Identity.getSignInClient(context)
@@ -170,19 +211,16 @@ fun AppNavigation() {
                             googleSignInLauncher.launch(IntentSenderRequest.Builder(result).build())
                         }
                         .addOnFailureListener { e ->
-                            Log.e("AppNavigation", "Google sign-in intent failed", e)
+                            Log.e("AppNavigation", "Google sign‑in intent failed", e)
+                            loginViewModel.updateError("Unable to launch Google sign‑in: ${e.localizedMessage}")
                         }
                 },
-                onGitHubSignIn = {
-                    val provider = OAuthProvider.newBuilder("github.com")
-                    auth.startActivityForSignInWithProvider(context as Activity, provider.build())
-                        .addOnSuccessListener { result -> loginViewModel.updateUser(result.user) }
-                        .addOnFailureListener { e -> Log.w("AppNavigation", "GitHub sign in failed", e) }
-                },
+                onGitHubSignIn = { launchGitHub() },
                 onGoToPremium = { navController.navigate(Routes.PREMIUM) },
                 onDismiss = { navController.popBackStack() }
             )
         }
+
         composable(Routes.PREMIUM) {
             PremiumScreen(onNavigateBack = { navController.popBackStack() })
         }
