@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.io.ByteArrayOutputStream
 
 plugins {
     id("com.android.application")
@@ -6,6 +7,34 @@ plugins {
     id("com.google.gms.google-services")
     alias(libs.plugins.kotlin.compose)
 }
+
+fun Project.gitCmd(vararg args: String): String? {
+    return try {
+        // Use Java's ProcessBuilder instead of project.exec
+        val process = ProcessBuilder("git", *args)
+            .directory(this.rootDir) // Ensure command runs from the project's root directory
+            .redirectOutput(ProcessBuilder.Redirect.PIPE)
+            .redirectError(ProcessBuilder.Redirect.PIPE)
+            .start()
+
+        // Wait for the process to complete, with a timeout
+        process.waitFor(5, TimeUnit.SECONDS)
+
+        // Read the output and return it, or null if it's empty
+        process.inputStream.bufferedReader().readText().trim().ifEmpty { null }
+    } catch (e: Exception) {
+        // If git isn't installed or it's not a git repo, return null
+        project.logger.warn("Could not run git command: ${e.message}")
+        null
+    }
+}
+
+// ⭐ No changes needed here, they work with the revised gitCmd ⭐
+fun Project.gitVersionCode(): Int =
+    gitCmd("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
+
+fun Project.gitVersionName(): String =
+    gitCmd("describe", "--tags", "--dirty", "--always") ?: "0.0.0-dev"
 
 android {
     namespace = "com.proxilocal.hyperlocal"
@@ -15,8 +44,11 @@ android {
         applicationId = "com.proxilocal.hyperlocal"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+
+        // ⭐ automatic versioning ⭐
+        versionCode = gitVersionCode()   // e.g. 153 commits ⇒ 153
+        versionName = gitVersionName()   // e.g. v1.2.3‑4‑gabc1234
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
