@@ -5,9 +5,11 @@ agp = "8.12.0"
 androidxCoreKtx = "1.12.0"
 androidxJunit = "1.2.1"
 appcompatVersion = "1.7.1"
+coilCompose = "2.7.0"
 composeBom = "2023.10.01"
 composeBomVersion = "2025.07.00"
 coreKtxVersion = "1.16.0"
+desugar_jdk_libs = "2.1.5"
 espressoCoreVersion = "3.6.1"
 firebaseBom = "34.0.0"
 kotlin = "2.0.21"
@@ -46,7 +48,9 @@ androidx-ui = { module = "androidx.compose.ui:ui" }
 androidx-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 androidx-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBomVersion" }
+desugar_jdk_libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar_jdk_libs" }
 firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }

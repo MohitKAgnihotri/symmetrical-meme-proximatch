@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.hyperlocal"
+    namespace = "com.proxilocal.hyperlocal"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.hyperlocal"
+        applicationId = "com.proxilocal.hyperlocal"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -91,7 +91,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.ui.tooling.preview)
     debugImplementation(libs.androidx.ui.tooling)
-    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation(libs.coil.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
@@ -104,7 +104,7 @@ dependencies {
     implementation(libs.play.billing)
 
     // Desugaring for minSdk 24
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // Testing dependencies
     testImplementation(libs.junit)
