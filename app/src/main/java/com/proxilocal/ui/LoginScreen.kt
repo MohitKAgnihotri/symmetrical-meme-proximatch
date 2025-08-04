@@ -1,16 +1,22 @@
+// UPDATED: LoginScreen.kt
 package com.proxilocal.ui
+
 import com.proxilocal.hyperlocal.R
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.proxilocal.hyperlocal.LoginViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -20,6 +26,9 @@ fun LoginScreen(
     onGoToPremium: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val viewModel: LoginViewModel = viewModel()
+    val uiState by viewModel.uiState.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -36,41 +45,46 @@ fun LoginScreen(
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                "Sign In to Manage Your Subscription",
-                style = MaterialTheme.typography.headlineMedium,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "Your login does not affect your anonymous matching profile.",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Social Login Buttons
-            SocialLoginButton("Sign in with Google", R.drawable.ic_google_logo, onGoogleSignIn)
-            Spacer(modifier = Modifier.height(16.dp))
-            SocialLoginButton("Sign in with GitHub", R.drawable.ic_github_logo, onGitHubSignIn)
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Premium Button
-            OutlinedButton(
-                onClick = onGoToPremium,
-                modifier = Modifier.fillMaxWidth()
+        Box(Modifier.fillMaxSize().padding(paddingValues)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                Text("Learn More About Premium")
+                Text(
+                    "Sign In to Manage Your Subscription",
+                    style = MaterialTheme.typography.headlineMedium,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Your login does not affect your anonymous matching profile.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+
+                SocialLoginButton("Sign in with Google", R.drawable.ic_google_logo, onGoogleSignIn)
+                Spacer(modifier = Modifier.height(16.dp))
+                SocialLoginButton("Sign in with GitHub", R.drawable.ic_github_logo, onGitHubSignIn)
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                OutlinedButton(
+                    onClick = onGoToPremium,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Learn More About Premium")
+                }
+            }
+
+            if (uiState.isLoading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
             }
         }
     }

@@ -1,4 +1,4 @@
-// UPDATED: AppNavigation.kt
+// FINAL PATCH: AppNavigation.kt (with safer LaunchedEffect)
 package com.proxilocal.ui
 
 import android.app.Activity
@@ -25,6 +25,7 @@ import com.proxilocal.ui.onboarding.OnboardingGenderScreen
 import com.proxilocal.ui.onboarding.OnboardingVibeScreen
 import com.proxilocal.ui.onboarding.WelcomeScreen
 import com.proxilocal.ui.premium.PremiumScreen
+import kotlinx.coroutines.delay
 
 object Routes {
     const val WELCOME = "welcome"
@@ -124,6 +125,7 @@ fun AppNavigation() {
         composable(Routes.LOGIN) {
             val loginViewModel: LoginViewModel = viewModel()
             val uiState by loginViewModel.uiState.collectAsState()
+            val currentUser by rememberUpdatedState(uiState.user)
 
             val googleSignInLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -142,9 +144,18 @@ fun AppNavigation() {
                 }
             }
 
-            LaunchedEffect(uiState) {
-                if (uiState.user != null) {
-                    navController.navigate(Routes.WELCOME) { popUpTo(Routes.LOGIN) { inclusive = true } }
+            LaunchedEffect(currentUser) {
+                if (currentUser != null) {
+                    delay(200)
+                    val profile = CriteriaManager.getUserProfile(context)
+                    val isProfileValid = profile.gender != Gender.PRIVATE &&
+                            profile.myCriteria.any { it } && profile.theirCriteria.any { it }
+
+                    navController.navigate(
+                        if (isProfileValid) Routes.MAIN_SCREEN else Routes.GENDER_SELECTION
+                    ) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
                 }
             }
 
