@@ -30,7 +30,8 @@ class LoginViewModel : ViewModel() {
         _uiState.value = LoginUiState(user = auth.currentUser)
     }
 
-    fun signInWithGoogle(credential: AuthCredential) {
+    // Generic sign-in method for any credential type
+    fun signInWithCredential(credential: AuthCredential) {
         viewModelScope.launch {
             _uiState.value = LoginUiState(isLoading = true)
             try {
@@ -45,5 +46,9 @@ class LoginViewModel : ViewModel() {
     fun signOut() {
         auth.signOut()
         _uiState.value = LoginUiState()
+    }
+
+    fun updateUser(user: FirebaseUser?) {
+        _uiState.value = _uiState.value.copy(user = user)
     }
 }

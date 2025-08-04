@@ -4,11 +4,7 @@ import android.app.Activity
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -20,16 +16,14 @@ import com.example.ui.MainScreen
 import com.example.ui.onboarding.OnboardingGenderScreen
 import com.example.ui.onboarding.OnboardingVibeScreen
 import com.example.ui.onboarding.WelcomeScreen
+import com.example.ui.premium.PremiumScreen
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.firebase.auth.*
+import com.example.hyperlocal.R // <-- Import the R class
 import com.google.firebase.Firebase
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.OAuthProvider
-import com.google.firebase.auth.auth
-
 
 object Routes {
     const val WELCOME = "welcome"
@@ -38,6 +32,7 @@ object Routes {
     const val THEIR_VIBE_SELECTION = "their_vibe"
     const val MAIN_SCREEN = "main"
     const val LOGIN = "login"
+    const val PREMIUM = "premium"
 }
 
 @Composable
@@ -47,15 +42,13 @@ fun AppNavigation() {
     val context = LocalContext.current
     val auth: FirebaseAuth = Firebase.auth
 
-    // Determine the correct starting screen
     val startDestination = when {
-        auth.currentUser != null -> Routes.MAIN_SCREEN // If user is already logged in, go to main.
-        CriteriaManager.getUserProfile(context) != null -> Routes.MAIN_SCREEN // If user completed anonymous setup, go to main.
-        else -> Routes.WELCOME // Otherwise, show the welcome screen.
+        auth.currentUser != null -> Routes.MAIN_SCREEN
+        CriteriaManager.getUserProfile(context) != null -> Routes.MAIN_SCREEN
+        else -> Routes.WELCOME
     }
 
     NavHost(navController = navController, startDestination = startDestination) {
-        // --- Onboarding Routes ---
         composable(Routes.WELCOME) {
             WelcomeScreen(
                 onLogin = { navController.navigate(Routes.LOGIN) },
@@ -103,7 +96,6 @@ fun AppNavigation() {
             }
         }
 
-        // --- Main App Routes ---
         composable(Routes.MAIN_SCREEN) {
             val loginViewModel: LoginViewModel = viewModel()
             val userState by loginViewModel.uiState.collectAsState()
@@ -112,7 +104,6 @@ fun AppNavigation() {
                 onGoToLogin = { navController.navigate(Routes.LOGIN) },
                 onLogout = {
                     loginViewModel.signOut()
-                    // After logout, go back to the welcome screen and clear the history
                     navController.navigate(Routes.WELCOME) {
                         popUpTo(Routes.MAIN_SCREEN) { inclusive = true }
                     }
@@ -139,7 +130,7 @@ fun AppNavigation() {
                     try {
                         val account = task.getResult(ApiException::class.java)!!
                         val credential = GoogleAuthProvider.getCredential(account.idToken!!, null)
-                        loginViewModel.signInWithGoogle(credential)
+                        loginViewModel.signInWithCredential(credential)
                     } catch (e: ApiException) {
                         Log.w("AppNavigation", "Google sign in failed", e)
                     }
@@ -148,7 +139,6 @@ fun AppNavigation() {
 
             LaunchedEffect(uiState) {
                 if (uiState.user != null) {
-                    // On successful login, navigate to the main screen and clear the back stack
                     navController.navigate(Routes.MAIN_SCREEN) {
                         popUpTo(Routes.WELCOME) { inclusive = true }
                     }
@@ -157,30 +147,23 @@ fun AppNavigation() {
 
             LoginScreen(
                 onGoogleSignIn = { googleSignInLauncher.launch(googleSignInClient.signInIntent) },
-                onAppleSignIn = {
-                    val provider = OAuthProvider.newBuilder("apple.com")
-                    auth.startActivityForSignInWithProvider(context as Activity, provider.build())
-                        .addOnSuccessListener {
-                            // User signed in
-                        }
-                        .addOnFailureListener { e ->
-                            Log.w("AppNavigation", "Apple sign in failed", e)
-                        }
-                },
-                onFacebookSignIn = { /* TODO: Implement Facebook Sign-In */ },
-                onInstagramSignIn = { /* TODO: Implement Instagram Sign-In */ },
                 onGitHubSignIn = {
                     val provider = OAuthProvider.newBuilder("github.com")
                     auth.startActivityForSignInWithProvider(context as Activity, provider.build())
-                        .addOnSuccessListener {
-                            // User signed in
+                        .addOnSuccessListener { result ->
+                            loginViewModel.updateUser(result.user)
                         }
                         .addOnFailureListener { e ->
                             Log.w("AppNavigation", "GitHub sign in failed", e)
                         }
                 },
+                onGoToPremium = { navController.navigate(Routes.PREMIUM) },
                 onDismiss = { navController.popBackStack() }
             )
+        }
+
+        composable(Routes.PREMIUM) {
+            PremiumScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }

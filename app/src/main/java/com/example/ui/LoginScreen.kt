@@ -17,16 +17,14 @@ import com.example.hyperlocal.R
 @Composable
 fun LoginScreen(
     onGoogleSignIn: () -> Unit,
-    onAppleSignIn: () -> Unit,
-    onFacebookSignIn: () -> Unit,
-    onInstagramSignIn: () -> Unit,
     onGitHubSignIn: () -> Unit,
+    onGoToPremium: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Unlock Premium Features") },
+                title = { Text("Sign In or Go Premium") },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
@@ -48,51 +46,55 @@ fun LoginScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                "Sign In to Go Premium",
+                "Sign In to Manage Your Subscription",
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Your login is only used to manage your subscription and does not affect your anonymous matching profile.",
+                "Your login does not affect your anonymous matching profile.",
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(32.dp))
 
             // Social Login Buttons
             SocialLoginButton("Sign in with Google", R.drawable.ic_google_logo, onGoogleSignIn)
             Spacer(modifier = Modifier.height(16.dp))
-            SocialLoginButton("Sign in with Apple", R.drawable.ic_apple_logo, onAppleSignIn)
-            Spacer(modifier = Modifier.height(16.dp))
-            SocialLoginButton("Sign in with Facebook", R.drawable.ic_facebook_logo, onFacebookSignIn)
-            Spacer(modifier = Modifier.height(16.dp))
-            SocialLoginButton("Sign in with Instagram", R.drawable.ic_instagram_logo, onInstagramSignIn)
-            Spacer(modifier = Modifier.height(16.dp))
             SocialLoginButton("Sign in with GitHub", R.drawable.ic_github_logo, onGitHubSignIn)
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Premium Button
+            OutlinedButton(
+                onClick = onGoToPremium,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Learn More About Premium")
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SocialLoginButton(
     text: String,
     iconResId: Int,
     onClick: () -> Unit
 ) {
-    OutlinedButton(
+    Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(vertical = 12.dp)
     ) {
         Icon(
             painter = painterResource(id = iconResId),
             contentDescription = text,
             modifier = Modifier.size(24.dp),
-            tint = Color.Unspecified // Use original colors of the logos
+            tint = Color.Unspecified
         )
         Spacer(modifier = Modifier.width(16.dp))
-        Text(text, color = MaterialTheme.colorScheme.onSurface)
+        Text(text, color = MaterialTheme.colorScheme.onPrimary)
     }
 }
