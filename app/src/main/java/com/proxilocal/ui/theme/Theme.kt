@@ -1,9 +1,12 @@
-package com.proxilocal.hyperlocal.ui.theme
+package com.proxilocal.ui.theme
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import com.proxilocal.hyperlocal.ui.theme.Black
+import com.proxilocal.hyperlocal.ui.theme.Purple500
+import com.proxilocal.hyperlocal.ui.theme.Teal200
+import com.proxilocal.hyperlocal.ui.theme.Typography
+import com.proxilocal.hyperlocal.ui.theme.White
 
 private val LightColors = lightColorScheme(
     primary = Purple500,
@@ -14,14 +17,6 @@ private val LightColors = lightColorScheme(
 
 @Composable
 fun HyperLocalTheme(content: @Composable () -> Unit) {
-    val systemUiController = rememberSystemUiController()
-    SideEffect {
-        systemUiController.setSystemBarsColor(
-            color = Purple500,
-            darkIcons = false
-        )
-    }
-
     MaterialTheme(
         colorScheme = LightColors,
         typography = Typography(),

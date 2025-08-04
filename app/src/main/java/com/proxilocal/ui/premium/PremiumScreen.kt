@@ -1,9 +1,10 @@
 package com.proxilocal.ui.premium
 
 import android.app.Activity
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
@@ -38,7 +39,7 @@ fun PremiumScreen(
                 title = { Text("ProxiMatch Premium") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -51,8 +52,6 @@ fun PremiumScreen(
                 .fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ... (Header UI remains the same)
-
             Icon(
                 imageVector = Icons.Default.Star,
                 contentDescription = "Premium",
@@ -73,7 +72,6 @@ fun PremiumScreen(
             )
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Feature List
             FeatureRow(text = "Expanded Criteria: Use up to 64 criteria points.")
             FeatureRow(text = "Advanced Filters: See only the matches you want.")
             FeatureRow(text = "\"Second Look\": Revisit profiles you've passed.")
@@ -81,7 +79,6 @@ fun PremiumScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // State-driven UI for the bottom section
             when (val state = uiState) {
                 is PremiumScreenState.Loading -> {
                     CircularProgressIndicator()

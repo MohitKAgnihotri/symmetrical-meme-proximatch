@@ -13,7 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,12 +26,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.firebase.auth.FirebaseUser
 import com.proxilocal.hyperlocal.InterestManager
 import com.proxilocal.hyperlocal.MainViewModel
 import com.proxilocal.hyperlocal.MatchResult
 import com.proxilocal.hyperlocal.ui.components.InterestDialog
 import com.proxilocal.ui.components.*
-import com.google.firebase.auth.FirebaseUser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,7 +95,6 @@ fun MainScreen(
                     title = { Text("ProxiMatch Radar", color = Color.White) },
                     actions = {
                         if (user != null) {
-                            // If user is logged in, show their email and a logout button
                             Text(
                                 text = user.email ?: "Logged In",
                                 color = Color.White.copy(alpha = 0.8f),
@@ -103,10 +102,9 @@ fun MainScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                             IconButton(onClick = onLogout) {
-                                Icon(Icons.Default.Logout, contentDescription = "Logout", tint = Color.White)
+                                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White)
                             }
                         } else {
-                            // If user is not logged in, show the "Go Premium" button
                             IconButton(onClick = onGoToLogin) {
                                 Icon(Icons.Default.Star, contentDescription = "Go Premium", tint = Color.Yellow)
                             }
@@ -175,6 +173,7 @@ fun MainScreen(
         }
     }
 }
+
 
 @Composable
 fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
