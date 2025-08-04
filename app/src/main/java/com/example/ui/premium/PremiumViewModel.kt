@@ -10,7 +10,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-// A simple data class to hold product info.
+// A more robust state holder for the screen
+sealed class PremiumScreenState {
+    object Loading : PremiumScreenState()
+    data class Success(val product: PremiumProduct) : PremiumScreenState()
+    object Subscribed : PremiumScreenState()
+    data class Error(val message: String) : PremiumScreenState()
+}
+
 data class PremiumProduct(
     val productDetails: ProductDetails,
     val formattedPrice: String
@@ -18,14 +25,8 @@ data class PremiumProduct(
 
 class PremiumViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val _product = MutableStateFlow<PremiumProduct?>(null)
-    val product = _product.asStateFlow()
-
-    private val _isSubscribed = MutableStateFlow(false)
-    val isSubscribed = _isSubscribed.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error = _error.asStateFlow()
+    private val _uiState = MutableStateFlow<PremiumScreenState>(PremiumScreenState.Loading)
+    val uiState = _uiState.asStateFlow()
 
     private lateinit var billingClient: BillingClient
     private val purchasesUpdatedListener = PurchasesUpdatedListener { billingResult, purchases ->
@@ -34,15 +35,12 @@ class PremiumViewModel(application: Application) : AndroidViewModel(application)
                 handlePurchase(purchase)
             }
         } else {
-            _error.value = "Subscription failed. Code: ${billingResult.responseCode}"
+            _uiState.value = PremiumScreenState.Error("Subscription failed. Code: ${billingResult.responseCode}")
         }
     }
 
-    init {
-        setupBillingClient()
-    }
-
-    private fun setupBillingClient() {
+    fun initializeBilling() {
+        _uiState.value = PremiumScreenState.Loading
         billingClient = BillingClient.newBuilder(getApplication())
             .setListener(purchasesUpdatedListener)
             .enablePendingPurchases()
@@ -52,52 +50,59 @@ class PremiumViewModel(application: Application) : AndroidViewModel(application)
             override fun onBillingSetupFinished(billingResult: BillingResult) {
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                     Log.d("PremiumViewModel", "Billing client setup finished.")
-                    queryAvailableProducts()
-                    checkSubscriptionStatus()
+                    viewModelScope.launch {
+                        checkSubscriptionStatus()
+                    }
+                } else {
+                    _uiState.value = PremiumScreenState.Error("Billing client setup failed. Code: ${billingResult.responseCode}")
                 }
             }
-
             override fun onBillingServiceDisconnected() {
                 Log.w("PremiumViewModel", "Billing client disconnected.")
-                // Implement your own retry policy here.
             }
         })
     }
 
-    private fun queryAvailableProducts() {
-        val productList = listOf(
-            QueryProductDetailsParams.Product.newBuilder()
-                .setProductId("proximatch_premium_monthly") // Replace with your actual product ID from Google Play Console
-                .setProductType(BillingClient.ProductType.SUBS)
-                .build()
+    private suspend fun checkSubscriptionStatus() {
+        val purchasesResult = billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build()
         )
+        val isSubscribed = purchasesResult.purchasesList.any { it.products.contains("proximatch_premium_monthly") && it.isAcknowledged }
 
+        if (isSubscribed) {
+            _uiState.value = PremiumScreenState.Subscribed
+        } else {
+            queryAvailableProducts()
+        }
+    }
+
+    private fun queryAvailableProducts() {
+        val productList = listOf(QueryProductDetailsParams.Product.newBuilder()
+            .setProductId("proximatch_premium_monthly")
+            .setProductType(BillingClient.ProductType.SUBS).build())
         val params = QueryProductDetailsParams.newBuilder().setProductList(productList)
 
-        billingClient.queryProductDetailsAsync(params.build()) { billingResult, productDetailsList ->
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList.isNotEmpty()) {
+        billingClient.queryProductDetailsAsync(params.build()) { _, productDetailsList ->
+            if (productDetailsList.isNotEmpty()) {
                 val productDetails = productDetailsList[0]
                 val price = productDetails.subscriptionOfferDetails?.first()?.pricingPhases?.pricingPhaseList?.first()?.formattedPrice
-                _product.value = PremiumProduct(productDetails, price ?: "N/A")
+                _uiState.value = PremiumScreenState.Success(PremiumProduct(productDetails, price ?: "N/A"))
+            } else {
+                _uiState.value = PremiumScreenState.Error("No products found. Check your Play Console setup.")
             }
         }
     }
 
-    private fun checkSubscriptionStatus() {
-        billingClient.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build()
-        ) { _, purchases ->
-            _isSubscribed.value = purchases.any { it.products.contains("proximatch_premium_monthly") && it.isAcknowledged }
-        }
-    }
-
     fun launchPurchaseFlow(activity: Activity) {
-        val currentProduct = _product.value?.productDetails ?: return
-        val offerToken = currentProduct.subscriptionOfferDetails?.first()?.offerToken ?: return
+        val currentState = _uiState.value
+        if (currentState !is PremiumScreenState.Success) return
+
+        val productDetails = currentState.product.productDetails
+        val offerToken = productDetails.subscriptionOfferDetails?.first()?.offerToken ?: return
 
         val productDetailsParamsList = listOf(
             BillingFlowParams.ProductDetailsParams.newBuilder()
-                .setProductDetails(currentProduct)
+                .setProductDetails(productDetails)
                 .setOfferToken(offerToken)
                 .build()
         )
@@ -110,18 +115,13 @@ class PremiumViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun handlePurchase(purchase: Purchase) {
-        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-            if (!purchase.isAcknowledged) {
-                val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
-                    .setPurchaseToken(purchase.purchaseToken)
-                    .build()
-                billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        _isSubscribed.value = true
-                    }
+        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED && !purchase.isAcknowledged) {
+            val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
+                .setPurchaseToken(purchase.purchaseToken).build()
+            billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    _uiState.value = PremiumScreenState.Subscribed
                 }
-            } else {
-                _isSubscribed.value = true
             }
         }
     }

@@ -27,15 +27,10 @@ fun PremiumScreen(
 ) {
     var discountCode by remember { mutableStateOf("") }
     val context = LocalContext.current
-    val product by premiumViewModel.product.collectAsState()
-    val isSubscribed by premiumViewModel.isSubscribed.collectAsState()
-    val error by premiumViewModel.error.collectAsState()
+    val uiState by premiumViewModel.uiState.collectAsState()
 
-    // Show a toast for any errors
-    LaunchedEffect(error) {
-        error?.let {
-            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-        }
+    LaunchedEffect(Unit) {
+        premiumViewModel.initializeBilling()
     }
 
     Scaffold(
@@ -57,6 +52,8 @@ fun PremiumScreen(
                 .fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // ... (Header UI remains the same)
+
             Icon(
                 imageVector = Icons.Default.Star,
                 contentDescription = "Premium",
@@ -85,48 +82,46 @@ fun PremiumScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Pricing
-            if (product != null && !isSubscribed) {
-                Text(
-                    "Only ${product!!.formattedPrice}/month",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-            } else if (isSubscribed) {
-                Text(
-                    "You are a Premium Member!",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Discount Code
-            if (!isSubscribed) {
-                OutlinedTextField(
-                    value = discountCode,
-                    onValueChange = { discountCode = it },
-                    label = { Text("Discount Code") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            Button(
-                onClick = {
-                    premiumViewModel.launchPurchaseFlow(context as Activity)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = product != null && !isSubscribed
-            ) {
-                if (product == null && !isSubscribed) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
-                } else if (isSubscribed) {
-                    Text("Subscribed", fontSize = 18.sp)
-                } else {
-                    Text("Subscribe Now", fontSize = 18.sp)
+            // State-driven UI for the bottom section
+            when (val state = uiState) {
+                is PremiumScreenState.Loading -> {
+                    CircularProgressIndicator()
+                }
+                is PremiumScreenState.Success -> {
+                    Text(
+                        "Only ${state.product.formattedPrice}/month",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = discountCode,
+                        onValueChange = { discountCode = it },
+                        label = { Text("Discount Code") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { premiumViewModel.launchPurchaseFlow(context as Activity) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Subscribe Now", fontSize = 18.sp)
+                    }
+                }
+                is PremiumScreenState.Subscribed -> {
+                    Text(
+                        "You are a Premium Member!",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                is PremiumScreenState.Error -> {
+                    Text(
+                        state.message,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
