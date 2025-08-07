@@ -13,5 +13,6 @@ data class MatchResult(
     val id: String,
     val matchPercentage: Int, // A value from 0 to 100
     val distanceRssi: Int,    // A signal strength value (e.g., -30 to -90)
-    val gender: Gender
+    val gender: Gender,
+    val lastSeen: Long = System.currentTimeMillis()
 )
