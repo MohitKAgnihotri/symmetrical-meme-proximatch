@@ -7,20 +7,13 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 import com.proxilocal.hyperlocal.CriteriaManager.calculateMatchPercentage
 import com.proxilocal.hyperlocal.CriteriaManager.decodeCriteria
 
-/**
- * Manages Bluetooth Low Energy (BLE) scanning to detect nearby users and calculate match percentages
- * based on their advertised criteria.
- *
- * @param context The application context, used to access Bluetooth services.
- * @param onMatchFound Callback invoked when a matching user is detected, providing a [MatchResult].
- * @param onPermissionMissing Callback invoked when required permissions are missing, allowing UI prompts.
- */
 class BLEScanner(
     private val context: Context,
     private val onMatchFound: (MatchResult) -> Unit,
@@ -31,14 +24,8 @@ class BLEScanner(
     private var callback: ScanCallback? = null
     private val TAG = "BLEScanner"
 
-    /**
-     * Starts BLE scanning to detect nearby devices advertising the ProxiLocal service.
-     * Requires [Manifest.permission.BLUETOOTH_SCAN] and [Manifest.permission.ACCESS_FINE_LOCATION].
-     * Notifies [onPermissionMissing] if permissions are not granted.
-     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun startScanning() {
-        // Reinitialize scanner if null
         if (scanner == null) {
             scanner = bluetoothAdapter.bluetoothLeScanner
             if (scanner == null) {
@@ -52,20 +39,23 @@ class BLEScanner(
             return
         }
 
-        val missingPermissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN)
-            != PackageManager.PERMISSION_GRANTED) {
-            missingPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
+        // --- CORRECTED PERMISSION CHECK ---
+        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            listOf(Manifest.permission.BLUETOOTH_SCAN)
+        } else {
+            listOf(Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.ACCESS_FINE_LOCATION)
         }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) {
-            missingPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+
+        val missingPermissions = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
+
         if (missingPermissions.isNotEmpty()) {
-            Log.e(TAG, "Missing permissions: $missingPermissions")
+            Log.e(TAG, "Missing permissions for scanning: $missingPermissions")
             onPermissionMissing(missingPermissions)
             return
         }
+        // --- END OF FIX ---
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
@@ -75,7 +65,6 @@ class BLEScanner(
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val serviceData = result.scanRecord?.getServiceData(BLEConstants.SERVICE_PARCEL_UUID)
                 if (serviceData == null) {
-                    Log.d(TAG, "No service data found in scan result")
                     return
                 }
 
@@ -88,17 +77,15 @@ class BLEScanner(
                     val ourId = String(UserIdManager.getOrGenerateId(context), Charsets.UTF_8)
                     val genderIndex = serviceData[0].toInt()
                     val receivedGender = Gender.values().getOrNull(genderIndex) ?: Gender.PRIVATE
-                    val criteriaBytes = serviceData.copyOfRange(1, 9) // 8 bytes for criteria
-                    val senderId = serviceData.copyOfRange(9, 17).toString(Charsets.UTF_8) // 8 bytes for ID
+                    val criteriaBytes = serviceData.copyOfRange(1, 9)
+                    val senderId = serviceData.copyOfRange(9, 17).toString(Charsets.UTF_8)
 
                     if (senderId == ourId) {
-                        Log.d(TAG, "Ignoring own advertisement")
                         return
                     }
 
                     val theirPrefs = decodeCriteria(criteriaBytes)
                     val ourProfile = CriteriaManager.getUserProfile(context)
-
                     val matchPercent = calculateMatchPercentage(ourProfile.theirCriteria, theirPrefs)
                     val matchResult = MatchResult(
                         id = senderId,
@@ -107,7 +94,6 @@ class BLEScanner(
                         gender = receivedGender
                     )
                     onMatchFound(matchResult)
-                    Log.d(TAG, "Detected $senderId ($receivedGender) @ ${result.rssi} dBm → $matchPercent% match")
                 } catch (e: Exception) {
                     Log.e(TAG, "Error processing scan result", e)
                 }
@@ -134,10 +120,6 @@ class BLEScanner(
         }
     }
 
-    /**
-     * Stops BLE scanning and cleans up resources.
-     * Requires [Manifest.permission.BLUETOOTH_SCAN].
-     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun stopScanning() {
         if (scanner == null || callback == null) {
@@ -149,7 +131,6 @@ class BLEScanner(
             Log.d(TAG, "Stopped scanning")
         } catch (e: SecurityException) {
             Log.e(TAG, "Security exception during scan stop", e)
-            onPermissionMissing(listOf(Manifest.permission.BLUETOOTH_SCAN))
         } finally {
             callback = null
         }

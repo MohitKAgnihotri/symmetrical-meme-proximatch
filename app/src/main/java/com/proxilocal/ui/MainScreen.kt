@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +34,8 @@ import com.proxilocal.hyperlocal.MatchResult
 import com.proxilocal.hyperlocal.ui.components.InterestDialog
 import com.proxilocal.ui.components.*
 
+private const val TAG = "MainScreen"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -52,10 +55,13 @@ fun MainScreen(
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        Log.d(TAG, "Permissions result received: $permissions")
         if (permissions.values.all { it }) {
+            Log.d(TAG, "All permissions GRANTED by user.")
             Toast.makeText(context, "Permissions granted. Starting...", Toast.LENGTH_SHORT).show()
             viewModel.start(context)
         } else {
+            Log.w(TAG, "Some or all permissions DENIED by user.")
             showPermissionRationale = true
         }
     }
@@ -118,19 +124,19 @@ fun MainScreen(
                 ActionBottomBar(
                     isSweeping = isSweeping,
                     onStartClicked = {
+                        Log.d(TAG, "Start button clicked.")
                         if (checkBLEPermissions(context)) {
+                            Log.d(TAG, "Permissions already granted. Starting ViewModel.")
                             viewModel.start(context)
                             Toast.makeText(context, "Scanning Started", Toast.LENGTH_SHORT).show()
                         } else {
+                            Log.d(TAG, "Permissions NOT granted. Launching request.")
                             val permissions = getRequiredPermissions()
-                            if (permissions.any { ActivityCompat.shouldShowRequestPermissionRationale(context as Activity, it) }) {
-                                showPermissionRationale = true
-                            } else {
-                                permissionsLauncher.launch(permissions)
-                            }
+                            permissionsLauncher.launch(permissions)
                         }
                     },
                     onStopClicked = {
+                        Log.d(TAG, "Stop button clicked.")
                         viewModel.stop()
                         Toast.makeText(context, "Scanning Stopped", Toast.LENGTH_SHORT).show()
                     }
@@ -174,7 +180,6 @@ fun MainScreen(
     }
 }
 
-
 @Composable
 fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
@@ -194,8 +199,10 @@ fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     )
 }
 
+// *** THIS IS THE CORRECTED FUNCTION ***
 private fun getRequiredPermissions(): Array<String> {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        // For Android 12 (API 31) and newer
         arrayOf(
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
@@ -203,12 +210,19 @@ private fun getRequiredPermissions(): Array<String> {
             Manifest.permission.ACCESS_FINE_LOCATION
         )
     } else {
-        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        // For Android 11 (API 30) and older
+        arrayOf(
+            Manifest.permission.BLUETOOTH,
+            Manifest.permission.BLUETOOTH_ADMIN,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        )
     }
 }
 
 fun checkBLEPermissions(context: Context): Boolean {
-    return getRequiredPermissions().all { perm ->
+    val allPermissionsGranted = getRequiredPermissions().all { perm ->
         ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
     }
+    Log.d(TAG, "checkBLEPermissions result: $allPermissionsGranted")
+    return allPermissionsGranted
 }
