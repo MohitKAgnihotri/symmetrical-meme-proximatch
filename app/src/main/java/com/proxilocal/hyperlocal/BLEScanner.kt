@@ -3,6 +3,7 @@ package com.proxilocal.hyperlocal
 import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
@@ -39,9 +40,8 @@ class BLEScanner(
             return
         }
 
-        // --- CORRECTED PERMISSION CHECK ---
         val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            listOf(Manifest.permission.BLUETOOTH_SCAN)
+            listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
         } else {
             listOf(Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -55,11 +55,24 @@ class BLEScanner(
             onPermissionMissing(missingPermissions)
             return
         }
-        // --- END OF FIX ---
 
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
+
+        // --- THIS IS THE CORRECTED FILTER ---
+        // We now filter by Service DATA, not just the Service UUID.
+        // The empty data and mask arrays tell the scanner to match any device
+        // that has data for our service UUID, regardless of what the data is.
+        val filter = ScanFilter.Builder()
+            .setServiceData(
+                BLEConstants.SERVICE_PARCEL_UUID,
+                ByteArray(0), // Empty data byte array
+                ByteArray(0)  // Empty mask, to match only the UUID
+            )
+            .build()
+        val filters = listOf(filter)
+        // --- END OF FIX ---
 
         callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -112,7 +125,7 @@ class BLEScanner(
         }
 
         try {
-            scanner.startScan(null, settings, callback)
+            scanner.startScan(filters, settings, callback)
             Log.d(TAG, "Started scanning")
         } catch (e: SecurityException) {
             Log.e(TAG, "Security exception during scan start", e)
