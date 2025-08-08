@@ -60,7 +60,6 @@ class BLEScanner(
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        // --- THIS IS THE CORRECTED FILTER ---
         // We now filter by Service DATA, not just the Service UUID.
         // The empty data and mask arrays tell the scanner to match any device
         // that has data for our service UUID, regardless of what the data is.
@@ -72,7 +71,6 @@ class BLEScanner(
             )
             .build()
         val filters = listOf(filter)
-        // --- END OF FIX ---
 
         callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
