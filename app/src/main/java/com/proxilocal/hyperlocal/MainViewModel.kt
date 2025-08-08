@@ -21,7 +21,7 @@ class MainViewModel : ViewModel() {
     private lateinit var bleScanner: BLEScanner
     private lateinit var locationHelper: LocationHelper
 
-    // ── Phase 0 kill‑switch (unchanged) ─────────────────────────
+    // Kill‑switch (unchanged)
     private val _interactiveRadarEnabled = MutableStateFlow(FeatureFlags.enableInteractiveRadar)
     val interactiveRadarEnabled: StateFlow<Boolean> = _interactiveRadarEnabled.asStateFlow()
     fun setInteractiveRadarEnabled(enabled: Boolean) {
@@ -29,7 +29,7 @@ class MainViewModel : ViewModel() {
         _interactiveRadarEnabled.value = enabled
     }
 
-    // ── Match state (unchanged data shape) ──────────────────────
+    // Match state
     private val _matchResultsMap = MutableStateFlow<Map<String, MatchResult>>(emptyMap())
     val matchResults: StateFlow<List<MatchResult>> = _matchResultsMap
         .map { it.values.toList().sortedByDescending { m -> m.matchPercentage } }
@@ -53,13 +53,14 @@ class MainViewModel : ViewModel() {
     private var lastZoomLocation: Location? = null
     private var cleanupJob: Job? = null
 
-    // ── NEW: Smooth the RSSI so dots don’t wobble ───────────────
-    // Exponential moving average per peer
+    // RSSI smoothing (kept minimal; we only use initial position now)
     private val smoothedRssi: MutableMap<String, Float> = mutableMapOf()
-    private val rssiAlpha = 0.25f // 25% new, 75% history (tune between 0.2–0.4)
+    private val rssiAlpha = 0.25f
 
-    // ── NEW: Make disappearance less trigger‑happy ──────────────
-    private val TIMEOUT_MS = 5_000L  // was 1_000; give scanner time to breathe
+    // Visibility windows
+    private val TIMEOUT_MS = 5_000L   // unseen for 5s = start fading
+    private val FADE_MS = 1_000L      // fade duration
+    private val REMOVE_MS = TIMEOUT_MS + FADE_MS
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun start(context: Context) {
@@ -68,13 +69,11 @@ class MainViewModel : ViewModel() {
             bleScanner = BLEScanner(
                 context = context,
                 onMatchFound = { incoming: MatchResult ->
-                    // Smooth RSSI
                     val prev = smoothedRssi[incoming.id] ?: incoming.distanceRssi.toFloat()
                     val smoothed = (rssiAlpha * incoming.distanceRssi + (1f - rssiAlpha) * prev)
                     smoothedRssi[incoming.id] = smoothed
 
                     val currentMap = _matchResultsMap.value.toMutableMap()
-                    // Rebuild with smoothed RSSI but keep everything else verbatim
                     currentMap[incoming.id] = incoming.copy(
                         distanceRssi = smoothed.toInt(),
                         lastSeen = System.currentTimeMillis()
@@ -112,10 +111,10 @@ class MainViewModel : ViewModel() {
         cleanupJob?.cancel()
         cleanupJob = viewModelScope.launch {
             while (isActive) {
-                delay(1000)
+                delay(250) // tick faster so UI fade looks smooth
                 val now = System.currentTimeMillis()
                 val updated = _matchResultsMap.value.filterValues { match ->
-                    (now - match.lastSeen) < TIMEOUT_MS
+                    (now - match.lastSeen) < REMOVE_MS
                 }
                 if (updated.size != _matchResultsMap.value.size) {
                     _matchResultsMap.value = updated

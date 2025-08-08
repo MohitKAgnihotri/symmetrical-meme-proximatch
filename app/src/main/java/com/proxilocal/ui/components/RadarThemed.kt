@@ -12,7 +12,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -22,7 +21,6 @@ import com.proxilocal.hyperlocal.Gender
 import com.proxilocal.hyperlocal.MatchResult
 import kotlin.math.min
 
-// --- DATA CLASSES AND THEME PROVIDER (unchanged) ---
 enum class RingStyle { SOLID, DASHED, GRADIENT }
 
 data class RadarTheme(
@@ -109,7 +107,6 @@ fun ThemedRadarCanvas(
 
         val sweepColor = if (isSweeping) theme.sweepColor else Color.Transparent
 
-        // Background grid + sweep
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (isSweeping) {
                 (1..theme.circleCount).forEach { i ->
@@ -136,19 +133,37 @@ fun ThemedRadarCanvas(
             )
         }
 
-        // --- NEW: compute stable, collision‑free positions once per frame
+        // POSITIONS: compute once (with caching) and reuse
         val positions = remember(matches, w, h, dotRadiusPx) {
             DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
         }
 
-        Layout(
+        // Ticker to drive fade-out alpha (updates ~4x/sec)
+        val now by produceState(System.currentTimeMillis()) {
+            while (true) {
+                value = System.currentTimeMillis()
+                kotlinx.coroutines.delay(250)
+            }
+        }
+        val TIMEOUT_MS = 5_000L
+        val FADE_MS = 1_000L
+
+        androidx.compose.ui.layout.Layout(
             content = {
                 matches.forEach { match ->
+                    val age = now - match.lastSeen
+                    val alphaFactor = when {
+                        age <= TIMEOUT_MS -> 1f
+                        age in (TIMEOUT_MS + 1)..(TIMEOUT_MS + FADE_MS) ->
+                            1f - ((age - TIMEOUT_MS).toFloat() / FADE_MS.toFloat())
+                        else -> 0f
+                    }
                     MatchDot(
                         theme = theme,
                         match = match,
                         isPinging = match.id == pingingMatchId,
-                        onPingCompleted = onPingCompleted
+                        onPingCompleted = onPingCompleted,
+                        alphaFactor = alphaFactor
                     )
                 }
             }
@@ -175,7 +190,8 @@ private fun MatchDot(
     theme: RadarTheme,
     match: MatchResult,
     isPinging: Boolean,
-    onPingCompleted: () -> Unit
+    onPingCompleted: () -> Unit,
+    alphaFactor: Float // NEW: overall alpha for fade-out
 ) {
     val dotRadiusPx = with(LocalDensity.current) { theme.dotRadiusDp.toPx() }
 
@@ -216,12 +232,14 @@ private fun MatchDot(
         label = "PulseAlpha"
     )
 
-    Canvas(modifier = Modifier.size(theme.dotRadiusDp * 8)) {
+    androidx.compose.foundation.Canvas(modifier = Modifier.size(theme.dotRadiusDp * 8)) {
+        if (alphaFactor <= 0f) return@Canvas // fully faded
+
         val dotCenter = center
 
         if (pingTrigger || pingTransition.isRunning) {
             drawCircle(
-                color = theme.ringPrimary.copy(alpha = pingAlpha),
+                color = theme.ringPrimary.copy(alpha = pingAlpha * alphaFactor),
                 radius = pingRadius,
                 center = dotCenter,
                 style = Stroke(width = 2.dp.toPx())
@@ -237,7 +255,7 @@ private fun MatchDot(
             }
             val glowColor = lerp(baseGlowColor.copy(alpha = 0.4f), baseGlowColor, match.matchPercentage / 100f)
             drawCircle(
-                color = glowColor.copy(alpha = pulseAlpha),
+                color = glowColor.copy(alpha = pulseAlpha * alphaFactor),
                 center = dotCenter,
                 radius = dotRadiusPx * 2.0f
             )
@@ -249,8 +267,8 @@ private fun MatchDot(
             Gender.PRIVATE -> theme.privateColor
             Gender.LGBTQ_PLUS -> Color.Transparent
         }
-        val paleColor = baseDotColor.copy(alpha = 0.4f)
-        val matchColor = lerp(paleColor, baseDotColor, match.matchPercentage / 100f)
+        val paleColor = baseDotColor.copy(alpha = 0.4f * alphaFactor)
+        val matchColor = lerp(paleColor, baseDotColor.copy(alpha = alphaFactor), match.matchPercentage / 100f)
 
         if (match.gender == Gender.LGBTQ_PLUS) {
             drawCircle(
