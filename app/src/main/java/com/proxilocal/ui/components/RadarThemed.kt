@@ -136,7 +136,12 @@ fun ThemedRadarCanvas(
 
         // Compute & cache dot positions once
         val positions = remember(matches, w, h, dotRadiusPx) {
-            DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
+            if (w <= 1f || h <= 1f) {
+                // Too early, layout not ready — keep everything centered
+                matches.associate { it.id to androidx.compose.ui.geometry.Offset(w / 2f, h / 2f) }
+            } else {
+                DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
+            }
         }
 
         // Fade dots after they age out

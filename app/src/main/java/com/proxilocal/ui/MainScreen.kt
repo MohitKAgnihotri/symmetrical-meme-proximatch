@@ -22,11 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.firebase.auth.FirebaseUser
 import com.proxilocal.hyperlocal.InterestManager
+import com.proxilocal.hyperlocal.LikeType
 import com.proxilocal.hyperlocal.MainViewModel
 import com.proxilocal.hyperlocal.MatchResult
 import com.proxilocal.hyperlocal.ui.components.InterestDialog
@@ -65,7 +67,6 @@ fun MainScreen(
         }
     }
 
-    // Auto-request if VM reports missing permissions during start()
     LaunchedEffect(vmPermissionError) {
         val missing = vmPermissionError
         if (!missing.isNullOrEmpty()) {
@@ -75,7 +76,6 @@ fun MainScreen(
         }
     }
 
-    // Pre-fetch location if already granted
     LaunchedEffect(Unit) {
         if (checkBLEPermissions(context)) {
             viewModel.fetchUserLocation(context)
@@ -95,17 +95,10 @@ fun MainScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        MapBackground(userLocation = userLocation, modifier = Modifier.fillMaxSize())
+        // 1) Full-screen map background
+        MapBackground(userLocation = userLocation, modifier = Modifier.fillMaxSize()) // :contentReference[oaicite:0]{index=0}
 
-        // Radar beneath Scaffold so buttons & chrome remain clickable
-        RadarCanvas(
-            theme = theme,
-            matches = matches,
-            isSweeping = isSweeping,
-            onDotTapped = { tapped -> selectedMatch = tapped },
-            modifier = Modifier.fillMaxSize()
-        )
-
+        // 2) Scaffold chrome & content (list / messages)
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -141,27 +134,25 @@ fun MainScreen(
                     onStartClicked = {
                         Log.d(TAG, "Start button clicked.")
                         if (checkBLEPermissions(context)) {
-                            Log.d(TAG, "Permissions already granted. Starting ViewModel.")
                             viewModel.start(context)
                             Toast.makeText(context, "Scanning Started", Toast.LENGTH_SHORT).show()
                         } else {
-                            Log.d(TAG, "Permissions NOT granted. Launching request.")
                             permissionsLauncher.launch(getRequiredPermissions())
                         }
                     },
                     onStopClicked = {
-                        Log.d(TAG, "Stop button clicked.")
                         viewModel.stop()
                         Toast.makeText(context, "Scanning Stopped", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
         ) { paddingValues ->
+            // Show helper text or list, but do NOT place the radar here anymore
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
             ) {
                 if (matches.isEmpty() && !isSweeping) {
                     Text(
@@ -174,22 +165,76 @@ fun MainScreen(
                 } else if (matches.isNotEmpty()) {
                     MatchList(
                         matches = matches,
-                        modifier = Modifier.align(Alignment.BottomCenter)
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
                     )
                 }
             }
         }
 
+        // 3) Centered radar overlay — true screen center alignment
+        CenteredRadarOverlay(
+            theme = theme,
+            matches = matches,
+            isSweeping = isSweeping,
+            sideMinDp = 240.dp,    // safe minimum diameter
+            sideScale = 0.95f      // occupy ~78% of the short side to avoid bar overlap
+        ) { tapped ->
+            selectedMatch = tapped
+        }
+
+        // 4) Dialog above everything
         selectedMatch?.let { match ->
             InterestDialog(
                 match = match,
                 onDismiss = { selectedMatch = null },
-                onConfirm = { confirmedMatch ->
-                    InterestManager.saveInterest(context, confirmedMatch.id)
+                onConfirm = { confirmed ->
+                    InterestManager.saveInterest(context, confirmed.id)
+                    viewModel.sendLikeTo(confirmed.id, LikeType.LIKE)
                     Toast.makeText(context, "Interest sent", Toast.LENGTH_SHORT).show()
                     selectedMatch = null
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun CenteredRadarOverlay(
+    theme: com.proxilocal.ui.components.RadarTheme,
+    matches: List<com.proxilocal.hyperlocal.MatchResult>,
+    isSweeping: Boolean,
+    sideMinDp: Dp,
+    sideScale: Float = 0.8f, // 0..1 of the screen's short side
+    onDotTapped: (com.proxilocal.hyperlocal.MatchResult) -> Unit
+) {
+    // A centered, touch-active square overlay sized to the screen's short side.
+    Box(
+        modifier = Modifier
+            .fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            val shortSide = minOf(maxWidth, maxHeight)
+            val side = (shortSide * sideScale).coerceAtLeast(sideMinDp)
+
+            Box(
+                modifier = Modifier
+                    .size(side)          // square
+                    .aspectRatio(1f)     // belt & suspenders
+            ) {
+                RadarCanvas( // keeps your gesture + themed draw stack intact :contentReference[oaicite:1]{index=1}:contentReference[oaicite:2]{index=2}
+                    theme = theme,
+                    matches = matches,
+                    isSweeping = isSweeping,
+                    onDotTapped = onDotTapped,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }

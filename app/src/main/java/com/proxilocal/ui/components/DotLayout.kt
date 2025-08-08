@@ -1,123 +1,91 @@
 package com.proxilocal.ui.components
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.ui.geometry.Offset
-import com.proxilocal.hyperlocal.DotPositionStore
 import com.proxilocal.hyperlocal.MatchResult
+import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
+private const val TAG = "DotLayout"
+
 /**
- * Stable, first-placement-only positions:
- *  - Use cached XY if present
- *  - Otherwise compute once from persisted angle + initial RSSI (with collision-aware radial nudges)
- *  - Save to PositionCache; later frames reuse without recalculation
+ * Computes stable positions for radar dots inside a w x h canvas.
+ * All math is defensive: never throws even if the box is tiny or padding exceeds size.
  */
 object DotLayout {
 
-    private const val EMERGENCY_ANGLE_NUDGE_DEG = 7.5f
-
-    fun rssiToNorm(rssi: Int): Float {
-        val minRssi = -90f
-        val maxRssi = -30f
-        return ((rssi - minRssi) / (maxRssi - minRssi)).coerceIn(0f, 1f)
-    }
-
+    /**
+     * @param w canvas width in px
+     * @param h canvas height in px
+     * @param dotRadiusPx visual (approx) radius of a dot for hit testing / spacing
+     */
     fun computePositions(
         context: Context,
         matches: List<MatchResult>,
-        width: Float,
-        height: Float,
+        w: Float,
+        h: Float,
         dotRadiusPx: Float
     ): Map<String, Offset> {
-        if (matches.isEmpty()) return emptyMap()
+        val width = w.coerceAtLeast(1f)
+        val height = h.coerceAtLeast(1f)
 
-        // Scope cache to this canvas size
-        PositionCache.setCanvasSize(width.toInt(), height.toInt())
+        // Keep at least a dot radius of inset so we don't draw under edges
+        val inset = max(1f, dotRadiusPx)
 
-        val center = Offset(width / 2f, height / 2f)
-        val maxRadius = min(width, height) / 2f
-        val minSep = dotRadiusPx * 2.6f
-        val placed = LinkedHashMap<String, Offset>(matches.size)
+        val cx = width / 2f
+        val cy = height / 2f
+        val maxRadius = min(width, height) / 2f - inset
 
-        // Use a stable order to avoid chain reactions on first layout
-        val ordered = matches.sortedWith(compareBy<MatchResult> {
-            DotPositionStore.getAngle(context, it.id) ?: ((it.id.hashCode() and 0x7fffffff) % 360).toFloat()
-        }.thenBy { it.id })
-
-// imports if needed:
-// import kotlin.math.cos
-// import kotlin.math.sin
-
-        for (m in ordered) {
-            // 0) Use cached XY if we already placed this id
-            val cached = PositionCache.get(m.id)
-            if (cached != null) {
-                placed[m.id] = cached
-                continue
+        // If we have no drawable radius (too small), park dots at center and bail
+        if (maxRadius <= 0f) {
+            if (matches.isNotEmpty()) {
+                Log.w(TAG, "Drawable area too small (w=$width, h=$height, inset=$inset). Parking ${matches.size} dots at center.")
             }
-
-            // 1) Fixed (persisted) angle; fall back to id hash once, then persist
-            val persisted = DotPositionStore.getAngle(context, m.id)
-            val angleDeg = persisted ?: ((m.id.hashCode() and 0x7fffffff) % 360).toFloat()
-
-            // 2) Base radius from (first-seen) RSSI
-            val baseRadius = maxRadius * (1f - rssiToNorm(m.distanceRssi))
-
-            // 3) Radial collision resolution at this fixed angle (one-time)
-            val delta = dotRadiusPx * 1.25f
-            val attempts = ArrayList<Float>(1 + 6 + 6).apply {
-                add(0f)
-                for (i in 1..6) add(i * delta)    // outward
-                for (i in 1..6) add(-i * delta)   // inward
-            }
-
-            var pos: Offset? = null
-            val rad = Math.toRadians(angleDeg.toDouble()).toFloat()
-            for (dr in attempts) {
-                val r = (baseRadius + dr).coerceIn(dotRadiusPx * 3, maxRadius - dotRadiusPx * 3)
-                val candidate = Offset(
-                    x = center.x + r * cos(rad),
-                    y = center.y + r * sin(rad)
-                )
-                if (isClear(candidate, placed.values, minSep)) {
-                    pos = candidate
-                    break
-                }
-            }
-
-            if (pos == null) {
-                // Last resort: tiny angle nudge
-                val rad1 = Math.toRadians((angleDeg + EMERGENCY_ANGLE_NUDGE_DEG).toDouble()).toFloat()
-                val r = baseRadius
-                pos = Offset(
-                    x = center.x + r * cos(rad1),
-                    y = center.y + r * sin(rad1)
-                )
-                // Do NOT persist this emergency change
-            } else if (persisted == null) {
-                // Persist the chosen fixed angle for future runs
-                DotPositionStore.putAngle(context, m.id, angleDeg)
-            }
-
-            // 4) Cache final position and reuse forever (until size changes)
-            PositionCache.put(m.id, pos!!)
-            placed[m.id] = pos
+            return matches.associate { it.id to Offset(cx, cy) }
         }
 
-        // Optional cache cleanup
-        // PositionCache.prune(placed.keys)
+        // Arrange around concentric rings; bucket by index to spread evenly
+        val ringCount = max(1, when {
+            matches.size <= 6 -> 1
+            matches.size <= 18 -> 2
+            else -> 3
+        })
 
-        return placed
+        // Small inner padding between rings
+        val ringPadding = (dotRadiusPx * 1.5f).coerceAtMost(maxRadius / ringCount)
+        val ringStep = max((maxRadius - ringPadding) / ringCount, 1f)
+
+        val positions = LinkedHashMap<String, Offset>(matches.size)
+        matches.forEachIndexed { idx, m ->
+            val ring = idx % ringCount
+            val r = max(1f, ringPadding + ringStep * (ring + 1))
+
+            // Distribute around the circle
+            val perRing = max(1, (matches.size + ringCount - 1) / ringCount)
+            val theta = (idx / ringCount) * (2 * PI / perRing)
+
+            var x = cx + (r * cos(theta)).toFloat()
+            var y = cy + (r * sin(theta)).toFloat()
+
+            // Safe clamp: if min > max (tiny layout), swap to avoid IllegalArgumentException
+            x = safeClamp(x, inset, width - inset)
+            y = safeClamp(y, inset, height - inset)
+
+            positions[m.id] = Offset(x, y)
+        }
+        return positions
     }
 
-    private fun isClear(candidate: Offset, existing: Collection<Offset>, minSep: Float): Boolean {
-        for (e in existing) {
-            val dx = candidate.x - e.x
-            val dy = candidate.y - e.y
-            if (dx * dx + dy * dy < (minSep * minSep)) return false
+    private fun safeClamp(value: Float, minV: Float, maxV: Float): Float {
+        return if (minV <= maxV) {
+            value.coerceIn(minV, maxV)
+        } else {
+            // Swap the bounds to avoid "empty range" — layout is smaller than insets.
+            value.coerceIn(maxV, minV)
         }
-        return true
     }
 }
