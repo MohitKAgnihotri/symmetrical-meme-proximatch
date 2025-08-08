@@ -6,20 +6,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import com.proxilocal.hyperlocal.MatchResult
+import com.proxilocal.hyperlocal.MatchUiState
 
 @Composable
 fun RadarCanvas(
     theme: RadarTheme,
-    matches: List<MatchResult>,
+    matches: List<MatchUiState>,            // CHANGED: UI state
     isSweeping: Boolean,
-    onDotTapped: (MatchResult) -> Unit,
+    onDotTapped: (MatchUiState) -> Unit,    // CHANGED: return UI state
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -42,11 +40,15 @@ fun RadarCanvas(
 
                     val w = size.width.toFloat()
                     val h = size.height.toFloat()
-                    val positions = DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
+                    val positions = DotLayout.computePositions(
+                        context,
+                        matches.map { it.match }, // compute with raw data
+                        w, h, dotRadiusPx
+                    )
 
                     // Hit-test
-                    val hit = matches.firstOrNull { m ->
-                        val p = positions[m.id]
+                    val hit = matches.firstOrNull { ui ->
+                        val p = positions[ui.match.id]
                         if (p == null) false
                         else {
                             val dx = down.position.x - p.x
@@ -58,11 +60,11 @@ fun RadarCanvas(
                     if (hit != null) {
                         // We handled it: consume + show feedback
                         down.consume()
-                        android.util.Log.d("RadarCanvas", "HIT -> ${hit.id}")
-                        pingingMatchId = hit.id
+                        android.util.Log.d("RadarCanvas", "HIT -> ${hit.match.id}")
+                        pingingMatchId = hit.match.id
                         onDotTapped(hit)
                         android.widget.Toast
-                            .makeText(context, "Tapped ${hit.id.take(6)}…", android.widget.Toast.LENGTH_SHORT)
+                            .makeText(context, "Tapped ${hit.match.id.take(6)}…", android.widget.Toast.LENGTH_SHORT)
                             .show()
                         // finish the gesture sequence
                         waitForUpOrCancellation()
@@ -78,7 +80,7 @@ fun RadarCanvas(
     ) {
         ThemedRadarCanvas(
             theme = theme,
-            matches = matches,
+            matches = matches,                  // pass UI state list through
             isSweeping = isSweeping,
             pingingMatchId = pingingMatchId,
             onPingCompleted = { pingingMatchId = null },

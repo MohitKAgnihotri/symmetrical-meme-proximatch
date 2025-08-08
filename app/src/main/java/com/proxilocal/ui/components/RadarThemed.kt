@@ -19,7 +19,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.proxilocal.hyperlocal.Gender
-import com.proxilocal.hyperlocal.MatchResult
+import com.proxilocal.hyperlocal.MatchUiState
+import com.proxilocal.hyperlocal.MatchStatus
 import kotlin.math.min
 
 enum class RingStyle { SOLID, DASHED, GRADIENT }
@@ -65,7 +66,7 @@ object ThemeProvider {
 @Composable
 fun ThemedRadarCanvas(
     theme: RadarTheme,
-    matches: List<MatchResult>,
+    matches: List<MatchUiState>,        // CHANGED: UI state list
     isSweeping: Boolean,
     pingingMatchId: String?,
     onPingCompleted: () -> Unit,
@@ -81,7 +82,7 @@ fun ThemedRadarCanvas(
         val center = Offset(w / 2f, h / 2f)
         val maxRadius = kotlin.math.min(w, h) / 2f
 
-        // ── Animations (unchanged) ───────────────────────────────────────────
+        // ── Animations ───────────────────────────────────────────
         val infiniteTransition = rememberInfiniteTransition(label = "RadarAnimations")
         val sweepAngle by if (isSweeping) {
             infiniteTransition.animateFloat(
@@ -109,7 +110,7 @@ fun ThemedRadarCanvas(
 
         val sweepColor = if (isSweeping) theme.sweepColor else Color.Transparent
 
-        // ── Background rings + sweep (unchanged) ─────────────────────────────
+        // ── Background rings + sweep ─────────────────────────────
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (isSweeping) {
                 (1..theme.circleCount).forEach { i ->
@@ -137,39 +138,29 @@ fun ThemedRadarCanvas(
         }
 
         // ── Compute & refresh dot positions on a timer ───────────────────────
-        // Recompute every N ms (and also when size or match IDs change).
         val REPOSITION_MS = 1500L
-
-        // Keep only the minimal keys that should trigger an immediate re-seed:
-        // - canvas size
-        // - dot visual radius
-        // - set of IDs (order doesn’t matter)
-        val idSignature = remember(matches) { matches.map { it.id }.sorted().joinToString("|") }
-
+        val idSignature = remember(matches) { matches.map { it.match.id }.sorted().joinToString("|") }
         var positions by remember { mutableStateOf<Map<String, Offset>>(emptyMap()) }
 
-        // Seed immediately when size/IDs/radius change
         LaunchedEffect(w, h, dotRadiusPx, idSignature) {
             positions = if (w <= 1f || h <= 1f) {
-                matches.associate { it.id to Offset(w / 2f, h / 2f) }
+                matches.associate { it.match.id to Offset(w / 2f, h / 2f) }
             } else {
-                DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
+                DotLayout.computePositions(context, matches.map { it.match }, w, h, dotRadiusPx)
             }
         }
-
-        // Periodic refresh (distance may drift; RSSI updates will reflect on next VM emission too)
         LaunchedEffect(w, h, dotRadiusPx, idSignature) {
             while (true) {
                 positions = if (w <= 1f || h <= 1f) {
-                    matches.associate { it.id to Offset(w / 2f, h / 2f) }
+                    matches.associate { it.match.id to Offset(w / 2f, h / 2f) }
                 } else {
-                    DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
+                    DotLayout.computePositions(context, matches.map { it.match }, w, h, dotRadiusPx)
                 }
                 kotlinx.coroutines.delay(REPOSITION_MS)
             }
         }
 
-        // ── Fade-out timing (unchanged) ──────────────────────────────────────
+        // ── Fade‑out timing ──────────────────────────────────────
         val now by produceState(System.currentTimeMillis()) {
             while (true) {
                 value = System.currentTimeMillis()
@@ -182,8 +173,8 @@ fun ThemedRadarCanvas(
         // ── Place composables at the computed positions ──────────────────────
         androidx.compose.ui.layout.Layout(
             content = {
-                matches.forEach { match ->
-                    val age = now - match.lastSeen
+                matches.forEach { ui ->
+                    val age = now - ui.match.lastSeen
                     val alphaFactor = when {
                         age <= TIMEOUT_MS -> 1f
                         age in (TIMEOUT_MS + 1)..(TIMEOUT_MS + FADE_MS) ->
@@ -192,8 +183,8 @@ fun ThemedRadarCanvas(
                     }
                     MatchDot(
                         theme = theme,
-                        match = match,
-                        isPinging = match.id == pingingMatchId,
+                        ui = ui,
+                        isPinging = ui.match.id == pingingMatchId,
                         onPingCompleted = onPingCompleted,
                         alphaFactor = alphaFactor
                     )
@@ -203,8 +194,8 @@ fun ThemedRadarCanvas(
             val placeables = measurables.map { it.measure(constraints) }
             layout(constraints.maxWidth, constraints.maxHeight) {
                 placeables.forEachIndexed { index, placeable ->
-                    val match = matches.getOrNull(index) ?: return@forEachIndexed
-                    val pos = positions[match.id]
+                    val ui = matches.getOrNull(index) ?: return@forEachIndexed
+                    val pos = positions[ui.match.id]
                     if (pos != null) {
                         placeable.placeRelative(
                             x = (pos.x - placeable.width / 2).toInt(),
@@ -217,15 +208,15 @@ fun ThemedRadarCanvas(
     }
 }
 
-
 @Composable
 private fun MatchDot(
     theme: RadarTheme,
-    match: MatchResult,
+    ui: MatchUiState,
     isPinging: Boolean,
     onPingCompleted: () -> Unit,
     alphaFactor: Float
 ) {
+    val match = ui.match
     val dotRadiusPx = with(LocalDensity.current) { theme.dotRadiusDp.toPx() }
 
     var hasAppeared by remember { mutableStateOf(false) }
@@ -265,6 +256,22 @@ private fun MatchDot(
         label = "PulseAlpha"
     )
 
+    // ✅ Create mutual-rings animation OUTSIDE Canvas (composable scope)
+    val isMutual = ui.status == MatchStatus.MUTUAL
+    val mutualRingProgress by if (isMutual) {
+        rememberInfiniteTransition(label = "MutualRings").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 2000),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "RingSweep"
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+
     androidx.compose.foundation.Canvas(modifier = Modifier.size(theme.dotRadiusDp * 8)) {
         if (alphaFactor <= 0f) return@Canvas
 
@@ -278,6 +285,22 @@ private fun MatchDot(
                 center = dotCenter,
                 style = Stroke(width = 2.dp.toPx())
             )
+        }
+
+        // ✅ Use the animated value inside Canvas; no composable calls here
+        if (isMutual) {
+            val baseR = dotRadiusPx * 1.4f
+            repeat(3) { i ->
+                val t = ((mutualRingProgress + i / 3f) % 1f)
+                val r = baseR + t * dotRadiusPx * 6
+                val a = (1f - t).coerceIn(0f, 1f) * 0.35f * alphaFactor
+                drawCircle(
+                    color = theme.ringAccent.copy(alpha = a),
+                    radius = r,
+                    center = dotCenter,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
         }
 
         // Glow for strong matches
@@ -321,3 +344,4 @@ private fun MatchDot(
         }
     }
 }
+

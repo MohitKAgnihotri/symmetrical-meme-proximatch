@@ -18,7 +18,9 @@ import com.proxilocal.hyperlocal.CriteriaManager.decodeCriteria
 class BLEScanner(
     private val context: Context,
     private val onMatchFound: (MatchResult) -> Unit,
-    private val onPermissionMissing: (List<String>) -> Unit
+    private val onPermissionMissing: (List<String>) -> Unit,
+    // NEW: Notifies when a LIKE/SUPER_LIKE packet targets *me*
+    private val onInboundInteraction: (senderIdHex: String, opcode: Byte) -> Unit = { _, _ -> }
 ) {
     private val TAG = "BLEScanner"
     private val bluetoothAdapter =
@@ -86,25 +88,38 @@ class BLEScanner(
     private fun handleResult(result: ScanResult) {
         val record = result.scanRecord ?: return
 
-        // ─── Phase 3 shadow parse of manufacturer data ───
+        // ─── Phase 3/5: manufacturer data (shadow) — actionable for mutual detection ───
         try {
             val mfd = record.manufacturerSpecificData
             if (mfd != null && mfd.size() > 0) {
+                val myId = UserIdManager.getOrGenerateId(context) // 8 bytes
                 for (i in 0 until mfd.size()) {
                     val companyId = mfd.keyAt(i)
                     val data = mfd.valueAt(i)
                     ProxiPayloads.decode(data)?.let { msg ->
                         when (msg.opcode) {
-                            BLEConstants.OPCODE_LIKE ->
-                                Log.i(TAG, "SHADOW RX: LIKE from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
-                            BLEConstants.OPCODE_SUPER_LIKE ->
-                                Log.i(TAG, "SHADOW RX: SUPER_LIKE from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
-                            BLEConstants.OPCODE_MUTUAL ->
-                                Log.i(TAG, "SHADOW RX: MUTUAL from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
-                            BLEConstants.OPCODE_CONNECT_REQ ->
-                                Log.i(TAG, "SHADOW RX: CONNECT_REQ from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
-                            else ->
-                                Log.d(TAG, "SHADOW RX: unknown opcode ${(msg.opcode.toInt() and 0xFF)}")
+                            BLEConstants.OPCODE_LIKE,
+                            BLEConstants.OPCODE_SUPER_LIKE,
+                            BLEConstants.OPCODE_MUTUAL,
+                            BLEConstants.OPCODE_CONNECT_REQ -> {
+                                // Only route to VM if this packet targets *me*
+                                if (msg.targetId.contentEquals(myId)) {
+                                    val senderHex = msg.senderId.toHex()
+                                    onInboundInteraction(senderHex, msg.opcode)
+                                }
+                                // Keep verbose logging
+                                when (msg.opcode) {
+                                    BLEConstants.OPCODE_LIKE ->
+                                        Log.i(TAG, "SHADOW RX: LIKE from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
+                                    BLEConstants.OPCODE_SUPER_LIKE ->
+                                        Log.i(TAG, "SHADOW RX: SUPER_LIKE from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
+                                    BLEConstants.OPCODE_MUTUAL ->
+                                        Log.i(TAG, "SHADOW RX: MUTUAL from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
+                                    BLEConstants.OPCODE_CONNECT_REQ ->
+                                        Log.i(TAG, "SHADOW RX: CONNECT_REQ from ${msg.senderId.toHex()} to ${msg.targetId.toHex()} (companyId=$companyId)")
+                                }
+                            }
+                            else -> Log.d(TAG, "SHADOW RX: unknown opcode ${(msg.opcode.toInt() and 0xFF)}")
                         }
                     }
                 }
@@ -113,7 +128,7 @@ class BLEScanner(
             Log.w(TAG, "Shadow parse failed", t)
         }
 
-        // ─── Your existing service data path (bytes all the way) ───
+        // ─── Existing service data path (discovery) ───
         val serviceData = record.getServiceData(BLEConstants.SERVICE_PARCEL_UUID) ?: return
 
         // Our format: [gender(1)] + [criteria(8)] + [senderId(8)] = 17 bytes

@@ -1,6 +1,7 @@
 package com.proxilocal.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -31,6 +32,7 @@ import com.proxilocal.hyperlocal.InterestManager
 import com.proxilocal.hyperlocal.LikeType
 import com.proxilocal.hyperlocal.MainViewModel
 import com.proxilocal.hyperlocal.MatchResult
+import com.proxilocal.hyperlocal.MatchUiState
 import com.proxilocal.hyperlocal.ui.components.InterestDialog
 import com.proxilocal.ui.components.*
 
@@ -46,7 +48,8 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     val theme by viewModel.selectedTheme.collectAsState()
-    val matches by viewModel.matchResults.collectAsState()
+    val matchesUi by viewModel.matchUiList.collectAsState()   // CHANGED: UI state for radar
+    val matchesRaw by viewModel.matchResults.collectAsState() // keep raw list for textual list
     val userLocation by viewModel.userLocation.collectAsState()
     val isSweeping by viewModel.isSweeping.collectAsState()
     val vmPermissionError by viewModel.permissionError.collectAsState()
@@ -96,9 +99,9 @@ fun MainScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1) Full-screen map background
-        MapBackground(userLocation = userLocation, modifier = Modifier.fillMaxSize()) // :contentReference[oaicite:0]{index=0}
+        MapBackground(userLocation = userLocation, modifier = Modifier.fillMaxSize())
 
-        // 2) Scaffold chrome & content (list / messages)
+        // 2) Scaffold chrome & content
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -147,14 +150,13 @@ fun MainScreen(
                 )
             }
         ) { paddingValues ->
-            // Show helper text or list, but do NOT place the radar here anymore
             Box(
                 Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(horizontal = 8.dp, vertical = 8.dp)
             ) {
-                if (matches.isEmpty() && !isSweeping) {
+                if (matchesRaw.isEmpty() && !isSweeping) {
                     Text(
                         text = "Press 'Start' to scan for nearby users.",
                         color = Color.White.copy(alpha = 0.7f),
@@ -162,9 +164,9 @@ fun MainScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.align(Alignment.Center)
                     )
-                } else if (matches.isNotEmpty()) {
+                } else if (matchesRaw.isNotEmpty()) {
                     MatchList(
-                        matches = matches,
+                        matches = matchesRaw,                    // still uses raw list
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
@@ -174,15 +176,15 @@ fun MainScreen(
             }
         }
 
-        // 3) Centered radar overlay — true screen center alignment
+        // 3) Centered radar overlay — use UI state list
         CenteredRadarOverlay(
             theme = theme,
-            matches = matches,
+            matches = matchesUi,
             isSweeping = isSweeping,
-            sideMinDp = 240.dp,    // safe minimum diameter
-            sideScale = 0.95f      // occupy ~78% of the short side to avoid bar overlap
-        ) { tapped ->
-            selectedMatch = tapped
+            sideMinDp = 240.dp,
+            sideScale = 0.95f
+        ) { tappedUi ->
+            selectedMatch = tappedUi.match
         }
 
         // 4) Dialog above everything
@@ -201,24 +203,22 @@ fun MainScreen(
     }
 }
 
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 private fun CenteredRadarOverlay(
     theme: com.proxilocal.ui.components.RadarTheme,
-    matches: List<com.proxilocal.hyperlocal.MatchResult>,
+    matches: List<MatchUiState>,          // CHANGED
     isSweeping: Boolean,
     sideMinDp: Dp,
     sideScale: Float = 0.8f, // 0..1 of the screen's short side
-    onDotTapped: (com.proxilocal.hyperlocal.MatchResult) -> Unit
+    onDotTapped: (MatchUiState) -> Unit   // CHANGED
 ) {
     // A centered, touch-active square overlay sized to the screen's short side.
     Box(
-        modifier = Modifier
-            .fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        BoxWithConstraints(
-            modifier = Modifier.align(Alignment.Center)
-        ) {
+        BoxWithConstraints(modifier = Modifier.align(Alignment.Center)) {
             val shortSide = minOf(maxWidth, maxHeight)
             val side = (shortSide * sideScale).coerceAtLeast(sideMinDp)
 
@@ -227,7 +227,7 @@ private fun CenteredRadarOverlay(
                     .size(side)          // square
                     .aspectRatio(1f)     // belt & suspenders
             ) {
-                RadarCanvas( // keeps your gesture + themed draw stack intact :contentReference[oaicite:1]{index=1}:contentReference[oaicite:2]{index=2}
+                RadarCanvas(
                     theme = theme,
                     matches = matches,
                     isSweeping = isSweeping,

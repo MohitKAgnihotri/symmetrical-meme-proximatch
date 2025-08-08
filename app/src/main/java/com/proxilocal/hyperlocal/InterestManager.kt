@@ -27,12 +27,20 @@ object InterestManager {
             return
         }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val currentInterests = getSentInterests(context).toMutableSet()
+        val currentRaw = prefs.getStringSet(KEY_SENT_INTERESTS, emptySet())?.toMutableSet() ?: mutableSetOf()
+
+        // Optional: migrate any legacy entries that were stored without timestamps
+        // to avoid "Invalid interest entry format" log noise.
+        val migrated = currentRaw.mapTo(mutableSetOf()) { entry ->
+            if (':' in entry) entry else "$entry:${System.currentTimeMillis()}"
+        }
+
         val timestamp = System.currentTimeMillis()
-        currentInterests.add("$userId:$timestamp")
-        cleanupExpiredInterests(currentInterests)
+        migrated.add("$userId:$timestamp")
+        cleanupExpiredInterests(migrated)
+
         prefs.edit {
-            putStringSet(KEY_SENT_INTERESTS, currentInterests)
+            putStringSet(KEY_SENT_INTERESTS, migrated)
         }
         Log.d(TAG, "Saved interest for user: $userId")
     }
@@ -49,8 +57,9 @@ object InterestManager {
             Log.w(TAG, "Checked empty or blank userId")
             return false
         }
-        val interests = getSentInterests(context)
-        return interests.any { it.startsWith("$userId:") }
+        // NOTE: getSentInterests() returns plain userIds (timestamps stripped).
+        val sentIds = getSentInterests(context)
+        return userId in sentIds
     }
 
     /**
@@ -66,7 +75,10 @@ object InterestManager {
         prefs.edit {
             putStringSet(KEY_SENT_INTERESTS, interests)
         }
-        return interests.mapNotNull { it.split(":").firstOrNull() }.toSet()
+        // Return only the IDs (strip timestamps)
+        return interests.mapNotNull { it.substringBefore(':', missingDelimiterValue = "") }
+            .filter { it.isNotBlank() }
+            .toSet()
     }
 
     /**
@@ -79,16 +91,11 @@ object InterestManager {
         interests.removeAll { entry ->
             val parts = entry.split(":")
             if (parts.size != 2) {
-                Log.w(TAG, "Invalid interest entry format: $entry")
+                // Legacy/invalid entry: drop it quietly (noisy logs removed)
                 return@removeAll true
             }
-            try {
-                val timestamp = parts[1].toLong()
-                timestamp < expirationThreshold
-            } catch (e: NumberFormatException) {
-                Log.e(TAG, "Invalid timestamp in interest entry: $entry", e)
-                true
-            }
+            val ts = parts[1].toLongOrNull() ?: return@removeAll true
+            ts < expirationThreshold
         }
     }
 }
