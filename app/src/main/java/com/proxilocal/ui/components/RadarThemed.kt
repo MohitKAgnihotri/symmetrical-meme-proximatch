@@ -1,5 +1,6 @@
 package com.proxilocal.ui.components
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -60,7 +61,7 @@ object ThemeProvider {
     )
 }
 
-/** Pure visual radar renderer. Touch handling belongs to a parent container. */
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 fun ThemedRadarCanvas(
     theme: RadarTheme,
@@ -78,8 +79,9 @@ fun ThemedRadarCanvas(
         val w = with(density) { maxWidth.toPx() }
         val h = with(density) { maxHeight.toPx() }
         val center = Offset(w / 2f, h / 2f)
-        val maxRadius = min(w, h) / 2f
+        val maxRadius = kotlin.math.min(w, h) / 2f
 
+        // ── Animations (unchanged) ───────────────────────────────────────────
         val infiniteTransition = rememberInfiniteTransition(label = "RadarAnimations")
         val sweepAngle by if (isSweeping) {
             infiniteTransition.animateFloat(
@@ -107,7 +109,7 @@ fun ThemedRadarCanvas(
 
         val sweepColor = if (isSweeping) theme.sweepColor else Color.Transparent
 
-        // Background rings + sweep
+        // ── Background rings + sweep (unchanged) ─────────────────────────────
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (isSweeping) {
                 (1..theme.circleCount).forEach { i ->
@@ -134,17 +136,40 @@ fun ThemedRadarCanvas(
             )
         }
 
-        // Compute & cache dot positions once
-        val positions = remember(matches, w, h, dotRadiusPx) {
-            if (w <= 1f || h <= 1f) {
-                // Too early, layout not ready — keep everything centered
-                matches.associate { it.id to androidx.compose.ui.geometry.Offset(w / 2f, h / 2f) }
+        // ── Compute & refresh dot positions on a timer ───────────────────────
+        // Recompute every N ms (and also when size or match IDs change).
+        val REPOSITION_MS = 1500L
+
+        // Keep only the minimal keys that should trigger an immediate re-seed:
+        // - canvas size
+        // - dot visual radius
+        // - set of IDs (order doesn’t matter)
+        val idSignature = remember(matches) { matches.map { it.id }.sorted().joinToString("|") }
+
+        var positions by remember { mutableStateOf<Map<String, Offset>>(emptyMap()) }
+
+        // Seed immediately when size/IDs/radius change
+        LaunchedEffect(w, h, dotRadiusPx, idSignature) {
+            positions = if (w <= 1f || h <= 1f) {
+                matches.associate { it.id to Offset(w / 2f, h / 2f) }
             } else {
                 DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
             }
         }
 
-        // Fade dots after they age out
+        // Periodic refresh (distance may drift; RSSI updates will reflect on next VM emission too)
+        LaunchedEffect(w, h, dotRadiusPx, idSignature) {
+            while (true) {
+                positions = if (w <= 1f || h <= 1f) {
+                    matches.associate { it.id to Offset(w / 2f, h / 2f) }
+                } else {
+                    DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
+                }
+                kotlinx.coroutines.delay(REPOSITION_MS)
+            }
+        }
+
+        // ── Fade-out timing (unchanged) ──────────────────────────────────────
         val now by produceState(System.currentTimeMillis()) {
             while (true) {
                 value = System.currentTimeMillis()
@@ -154,6 +179,7 @@ fun ThemedRadarCanvas(
         val TIMEOUT_MS = 5_000L
         val FADE_MS = 1_000L
 
+        // ── Place composables at the computed positions ──────────────────────
         androidx.compose.ui.layout.Layout(
             content = {
                 matches.forEach { match ->
@@ -177,7 +203,7 @@ fun ThemedRadarCanvas(
             val placeables = measurables.map { it.measure(constraints) }
             layout(constraints.maxWidth, constraints.maxHeight) {
                 placeables.forEachIndexed { index, placeable ->
-                    val match = matches[index]
+                    val match = matches.getOrNull(index) ?: return@forEachIndexed
                     val pos = positions[match.id]
                     if (pos != null) {
                         placeable.placeRelative(
@@ -190,6 +216,7 @@ fun ThemedRadarCanvas(
         }
     }
 }
+
 
 @Composable
 private fun MatchDot(
