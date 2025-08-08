@@ -4,34 +4,17 @@ import android.os.ParcelUuid
 import java.util.UUID
 
 object BLEConstants {
-    /**
-     * The UUID used for the BLE service in the ProxiLocal app.
-     * This identifies the service for advertising and scanning.
-     */
+    // Keep your existing UUID the same as before.
     private const val DEFAULT_SERVICE_UUID = "0000FEAA-0000-1000-8000-00805F9B34FB"
 
-    /**
-     * The UUID for the BLE service, validated and parsed from a string.
-     */
-    val SERVICE_UUID: UUID = createServiceUuid()
+    // Some projects have this named SERVICE_PARCEL_UUID; keep both for safety.
+    val SERVICE_UUID: UUID = UUID.fromString(DEFAULT_SERVICE_UUID)
+    val PARCEL_SERVICE_UUID: ParcelUuid = ParcelUuid(SERVICE_UUID)
+    val SERVICE_PARCEL_UUID: ParcelUuid = PARCEL_SERVICE_UUID
 
-    /**
-     * The ParcelUuid representation of the BLE service UUID, used for Android BLE operations.
-     */
-    val SERVICE_PARCEL_UUID: ParcelUuid = ParcelUuid(SERVICE_UUID)
-
-    /**
-     * Creates and validates the service UUID.
-     * @param uuidString The UUID string to parse (defaults to [DEFAULT_SERVICE_UUID]).
-     * @return A valid [UUID] instance.
-     * @throws IllegalArgumentException if the UUID string is malformed.
-     */
-    private fun createServiceUuid(uuidString: String = DEFAULT_SERVICE_UUID): UUID {
-        return try {
-            UUID.fromString(uuidString)
-        } catch (e: IllegalArgumentException) {
-            throw IllegalArgumentException("Invalid UUID format: $uuidString", e)
-        }
-    }
+    // Phase 3 opcodes
+    const val OPCODE_LIKE: Byte        = 0x01
+    const val OPCODE_SUPER_LIKE: Byte  = 0x02
+    const val OPCODE_MUTUAL: Byte      = 0x10
+    const val OPCODE_CONNECT_REQ: Byte = 0x20
 }
-

@@ -49,7 +49,6 @@ fun MainScreen(
     val matches by viewModel.matchResults.collectAsState()
     val userLocation by viewModel.userLocation.collectAsState()
     val isSweeping by viewModel.isSweeping.collectAsState()
-    val interactiveRadar by viewModel.interactiveRadarEnabled.collectAsState() // Phase 0: kill-switch
     var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
     var showPermissionRationale by remember { mutableStateOf(false) }
 
@@ -92,26 +91,14 @@ fun MainScreen(
             theme = theme,
             matches = matches,
             isSweeping = isSweeping,
-            // Phase 0: only allow tap interaction when the flag is enabled
-            onDotTapped = { tapped ->
-                if (interactiveRadar) {
-                    selectedMatch = tapped
-                } else {
-                    // no-op when kill-switch is OFF
-                }
-            },
+            onDotTapped = { tapped -> selectedMatch = tapped },
             modifier = Modifier.fillMaxSize()
         )
 
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = {
-                        Text(
-                            text = "ProxiMatch Radar" + if (interactiveRadar) " · IR ON" else "",
-                            color = Color.White
-                        )
-                    },
+                    title = { Text("ProxiMatch Radar", color = Color.White) },
                     actions = {
                         if (user != null) {
                             Text(
@@ -121,11 +108,7 @@ fun MainScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                             IconButton(onClick = onLogout) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Logout,
-                                    contentDescription = "Logout",
-                                    tint = Color.White
-                                )
+                                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White)
                             }
                         } else {
                             IconButton(onClick = onGoToLogin) {
@@ -183,7 +166,6 @@ fun MainScreen(
             }
         }
 
-        // Interest dialog still appears only if the flag allowed the tap to set selectedMatch
         selectedMatch?.let { match ->
             InterestDialog(
                 match = match,

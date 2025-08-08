@@ -6,12 +6,15 @@ import android.location.Location
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.proxilocal.flags.FeatureFlags
 import com.proxilocal.ui.components.RadarTheme
 import com.proxilocal.ui.components.ThemeProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -21,19 +24,17 @@ class MainViewModel : ViewModel() {
     private lateinit var bleScanner: BLEScanner
     private lateinit var locationHelper: LocationHelper
 
-    // Kill‑switch (unchanged)
-    private val _interactiveRadarEnabled = MutableStateFlow(FeatureFlags.enableInteractiveRadar)
-    val interactiveRadarEnabled: StateFlow<Boolean> = _interactiveRadarEnabled.asStateFlow()
-    fun setInteractiveRadarEnabled(enabled: Boolean) {
-        FeatureFlags.enableInteractiveRadar = enabled
-        _interactiveRadarEnabled.value = enabled
-    }
-
-    // Match state
+    // Keep a map keyed by device id (hex) so repeated sightings update the same entry.
     private val _matchResultsMap = MutableStateFlow<Map<String, MatchResult>>(emptyMap())
+
+    // The UI observes a sorted list derived from the map.
     val matchResults: StateFlow<List<MatchResult>> = _matchResultsMap
         .map { it.values.toList().sortedByDescending { m -> m.matchPercentage } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     private val _selectedTheme = MutableStateFlow(ThemeProvider.NeonTech)
     val selectedTheme: StateFlow<RadarTheme> = _selectedTheme
@@ -53,14 +54,9 @@ class MainViewModel : ViewModel() {
     private var lastZoomLocation: Location? = null
     private var cleanupJob: Job? = null
 
-    // RSSI smoothing (kept minimal; we only use initial position now)
-    private val smoothedRssi: MutableMap<String, Float> = mutableMapOf()
-    private val rssiAlpha = 0.25f
-
-    // Visibility windows
-    private val TIMEOUT_MS = 5_000L   // unseen for 5s = start fading
-    private val FADE_MS = 1_000L      // fade duration
-    private val REMOVE_MS = TIMEOUT_MS + FADE_MS
+    // RSSI smoothing (EMA)
+    private val smoothedRssi = mutableMapOf<String, Float>()
+    private val rssiAlpha = 0.30f // 0..1, higher = more reactive
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun start(context: Context) {
@@ -69,16 +65,17 @@ class MainViewModel : ViewModel() {
             bleScanner = BLEScanner(
                 context = context,
                 onMatchFound = { incoming: MatchResult ->
+                    // Smooth RSSI and refresh lastSeen
                     val prev = smoothedRssi[incoming.id] ?: incoming.distanceRssi.toFloat()
-                    val smoothed = (rssiAlpha * incoming.distanceRssi + (1f - rssiAlpha) * prev)
+                    val smoothed = (rssiAlpha * incoming.distanceRssi) + ((1f - rssiAlpha) * prev)
                     smoothedRssi[incoming.id] = smoothed
 
-                    val currentMap = _matchResultsMap.value.toMutableMap()
-                    currentMap[incoming.id] = incoming.copy(
+                    val current = _matchResultsMap.value.toMutableMap()
+                    current[incoming.id] = incoming.copy(
                         distanceRssi = smoothed.toInt(),
                         lastSeen = System.currentTimeMillis()
                     )
-                    _matchResultsMap.value = currentMap
+                    _matchResultsMap.value = current
                 },
                 onPermissionMissing = { permissions ->
                     viewModelScope.launch { _permissionError.value = permissions }
@@ -86,13 +83,15 @@ class MainViewModel : ViewModel() {
             )
         }
 
+        // Load profile and start advertising + scanning
         val profile = CriteriaManager.getUserProfile(context)
-        val criteriaToAdvertise = CriteriaManager.encodeCriteria(profile.myCriteria)
-        val senderId = UserIdManager.getOrGenerateId(context)
+        val criteriaToAdvertise = CriteriaManager.encodeCriteria(profile.myCriteria) // 8 bytes
+        val senderIdBytes: ByteArray = UserIdManager.getOrGenerateId(context)       // 8 bytes
         val genderToAdvertise = profile.gender
 
-        bleAdvertiser.startAdvertising(criteriaToAdvertise, senderId, genderToAdvertise)
+        bleAdvertiser.startAdvertising(criteriaToAdvertise, senderIdBytes, genderToAdvertise)
         bleScanner.startScanning()
+
         _isSweeping.value = true
         startCleanupJob()
         fetchUserLocation(context)
@@ -104,20 +103,28 @@ class MainViewModel : ViewModel() {
         if (::bleScanner.isInitialized) bleScanner.stopScanning()
         cleanupJob?.cancel()
         _matchResultsMap.value = emptyMap()
+        smoothedRssi.clear()
         _isSweeping.value = false
     }
 
+    /**
+     * Periodically remove matches that haven't been seen recently.
+     * Keep this short so dots "gracefully" disappear when a device leaves.
+     */
     private fun startCleanupJob() {
         cleanupJob?.cancel()
         cleanupJob = viewModelScope.launch {
             while (isActive) {
-                delay(250) // tick faster so UI fade looks smooth
+                delay(1000) // run every second
                 val now = System.currentTimeMillis()
+                val timeoutMs = 1000L // seen within the last second
                 val updated = _matchResultsMap.value.filterValues { match ->
-                    (now - match.lastSeen) < REMOVE_MS
+                    (now - match.lastSeen) < timeoutMs
                 }
                 if (updated.size != _matchResultsMap.value.size) {
                     _matchResultsMap.value = updated
+                    // also prune the rssi cache
+                    smoothedRssi.keys.retainAll(updated.keys)
                 }
             }
         }
@@ -128,14 +135,16 @@ class MainViewModel : ViewModel() {
         if (!::locationHelper.isInitialized) locationHelper = LocationHelper(context)
         locationHelper.fetchCurrentLocation(
             onLocationFetched = { newLocation ->
-                val lastLocation = lastZoomLocation
-                if (lastLocation == null || lastLocation.distanceTo(newLocation) > 5000) {
+                val last = lastZoomLocation
+                if (last == null || last.distanceTo(newLocation) > 5000) {
                     _userLocation.value = newLocation
                     lastZoomLocation = newLocation
                     _locationError.value = null
                 }
             },
-            onLocationError = { error -> viewModelScope.launch { _locationError.value = error } }
+            onLocationError = { error ->
+                viewModelScope.launch { _locationError.value = error }
+            }
         )
     }
 

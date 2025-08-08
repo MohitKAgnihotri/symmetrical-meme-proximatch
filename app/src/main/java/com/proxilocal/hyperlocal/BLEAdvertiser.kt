@@ -14,89 +14,86 @@ import androidx.core.content.ContextCompat
 
 class BLEAdvertiser(private val context: Context) {
 
-    private val bluetoothAdapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
-    private val advertiser = bluetoothAdapter.bluetoothLeAdvertiser
+    private val TAG = "BLEAdvertiser"
+    private val bluetoothManager: BluetoothManager? =
+        context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    private val advertiser = bluetoothManager?.adapter?.bluetoothLeAdvertiser
 
+    private val advertiseCallback = object : AdvertiseCallback() {
+        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
+            Log.d(TAG, "Advertising started: $settingsInEffect")
+        }
+        override fun onStartFailure(errorCode: Int) {
+            Log.e(TAG, "Advertising failed with error code: $errorCode")
+        }
+    }
+
+    private fun hasAdvertisePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) ==
+                    PackageManager.PERMISSION_GRANTED
+        } else true
+    }
+
+    /**
+     * Advertise service UUID + service data (criteria bytes).
+     * Shadow‑mode prep for LIKE/SUPER_LIKE payloads (not sent yet).
+     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
-    fun startAdvertising(criteriaData: ByteArray, senderId: ByteArray, gender: Gender) {
-        if (!bluetoothAdapter.isEnabled) {
-            Log.e("BLEAdvertiser", "Bluetooth is not enabled")
-            return
+    fun startAdvertising(criteriaBytes: ByteArray, senderId: ByteArray, gender: Gender) {
+        if (!hasAdvertisePermission()) {
+            Log.e(TAG, "Missing BLUETOOTH_ADVERTISE permission."); return
         }
-
         if (advertiser == null) {
-            Log.e("BLEAdvertiser", "BLE advertising not supported on this device")
-            return
+            Log.e(TAG, "BLE advertiser not available."); return
         }
 
-        // --- CORRECTED PERMISSION CHECK ---
-        val requiredPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Manifest.permission.BLUETOOTH_ADVERTISE
-        } else {
-            Manifest.permission.BLUETOOTH_ADMIN
+        // Your existing service data format: [gender(1)] + [criteria(8)] + [senderId(8)] = 17 bytes
+        require(criteriaBytes.size == 8) { "criteriaBytes must be 8 bytes" }
+        require(senderId.size == 8) { "senderId must be 8 bytes" }
+
+        val servicePayload = ByteArray(1 + 8 + 8).apply {
+            this[0] = gender.ordinal.toByte()
+            System.arraycopy(criteriaBytes, 0, this, 1, 8)
+            System.arraycopy(senderId, 0, this, 9, 8)
         }
-
-        if (ContextCompat.checkSelfPermission(context, requiredPermission) != PackageManager.PERMISSION_GRANTED) {
-            Log.e("BLEAdvertiser", "$requiredPermission permission not granted")
-            return
-        }
-        // --- END OF FIX ---
-
-        val genderByte = gender.ordinal.toByte()
-        val payload = byteArrayOf(genderByte) + criteriaData + senderId
-
-        if (payload.size > 31) {
-            Log.e("BLEAdvertiser", "Payload exceeds 31 bytes")
-            return
-        }
-
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
-            .setConnectable(true)
-            .build()
 
         val data = AdvertiseData.Builder()
-            .addServiceData(BLEConstants.SERVICE_PARCEL_UUID, payload)
-            .setIncludeDeviceName(true)
+            .setIncludeDeviceName(false)
+            .addServiceUuid(BLEConstants.PARCEL_SERVICE_UUID)
+            .addServiceData(BLEConstants.PARCEL_SERVICE_UUID, servicePayload)
+            .build()
+
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+            .setConnectable(false)
             .build()
 
         try {
             advertiser.startAdvertising(settings, data, advertiseCallback)
-        } catch (e: SecurityException) {
-            Log.e("BLEAdvertiser", "Security exception on startAdvertising", e)
-        }
-    }
+            Log.d(TAG, "Started advertising: serviceData=${servicePayload.size} bytes")
 
-    private val advertiseCallback = object : AdvertiseCallback() {
-        override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-            Log.d("BLEAdvertiser", "Started advertising with settings: $settingsInEffect")
-        }
-
-        override fun onStartFailure(errorCode: Int) {
-            val errorMessage = when (errorCode) {
-                ADVERTISE_FAILED_DATA_TOO_LARGE -> "Data too large"
-                ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "Too many advertisers"
-                ADVERTISE_FAILED_ALREADY_STARTED -> "Advertising already started"
-                ADVERTISE_FAILED_INTERNAL_ERROR -> "Internal error"
-                ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "Feature unsupported"
-                else -> "Unknown error"
-            }
-            Log.e("BLEAdvertiser", "Advertising failed: $errorMessage ($errorCode)")
+            // ─── Phase 3 shadow prep (not attached to AdvertiseData) ───
+            val likePayload = ProxiPayloads.encode(BLEConstants.OPCODE_LIKE, senderId)
+            val sLikePayload = ProxiPayloads.encode(BLEConstants.OPCODE_SUPER_LIKE, senderId)
+            ProxiPayloads.log("AD-PREP like", likePayload)
+            ProxiPayloads.log("AD-PREP sLike", sLikePayload)
+        } catch (se: SecurityException) {
+            Log.e(TAG, "Security exception on startAdvertising", se)
         }
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
     fun stopAdvertising() {
-        if (advertiser != null) {
-            try {
-                advertiser.stopAdvertising(advertiseCallback)
-                Log.d("BLEAdvertiser", "Stopped advertising")
-            } catch (e: SecurityException) {
-                Log.e("BLEAdvertiser", "Security exception on stopAdvertising", e)
-            }
-        } else {
-            Log.e("BLEAdvertiser", "Advertiser is null, cannot stop advertising")
+        if (advertiser == null) {
+            Log.w(TAG, "BLE advertiser is null, cannot stop"); return
+        }
+        try {
+            advertiser.stopAdvertising(advertiseCallback)
+            Log.d(TAG, "Stopped advertising")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Security exception on stopAdvertising", e)
         }
     }
 }
