@@ -7,11 +7,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.proxilocal.hyperlocal.MatchResult
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
 @Composable
 fun RadarCanvas(
@@ -21,34 +20,29 @@ fun RadarCanvas(
     onDotTapped: (MatchResult) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val density = LocalDensity.current
     val dotRadiusPx = with(density) { theme.dotRadiusDp.toPx() * 1.2f }
 
-    // --- NEW: State to track which dot is currently "pinging" ---
     var pingingMatchId by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = modifier
             .pointerInput(matches) {
                 detectTapGestures { tapOffset: Offset ->
-                    val w = size.width
-                    val h = size.height
-                    val center = Offset(w / 2f, h / 2f)
-                    val maxRadius = min(w, h) / 2f
+                    val w = size.width.toFloat()
+                    val h = size.height.toFloat()
+                    val positions = DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
 
+                    // Hit test using the same positions used for drawing
                     matches.forEach { match ->
-                        val normalizedDistance = ((match.distanceRssi - -90f) / (-30f - -90f)).coerceIn(0f, 1f)
-                        val radius = maxRadius * (1 - normalizedDistance)
-                        val angleRad = (match.id.hashCode() % 360) * (Math.PI / 180)
-                        val x = center.x + (radius * cos(angleRad)).toFloat()
-                        val y = center.y + (radius * sin(angleRad)).toFloat()
-
-                        val dx = tapOffset.x - x
-                        val dy = tapOffset.y - y
+                        val pos = positions[match.id] ?: return@forEach
+                        val dx = tapOffset.x - pos.x
+                        val dy = tapOffset.y - pos.y
                         if (dx * dx + dy * dy <= dotRadiusPx * dotRadiusPx) {
-                            // --- NEW: Trigger the ping and then show the dialog ---
                             pingingMatchId = match.id
                             onDotTapped(match)
+                            return@detectTapGestures
                         }
                     }
                 }
@@ -58,8 +52,8 @@ fun RadarCanvas(
             theme = theme,
             matches = matches,
             isSweeping = isSweeping,
-            pingingMatchId = pingingMatchId, // Pass the pinging ID down
-            onPingCompleted = { pingingMatchId = null }, // Callback to reset the ping
+            pingingMatchId = pingingMatchId,
+            onPingCompleted = { pingingMatchId = null },
             modifier = Modifier.fillMaxSize()
         )
     }

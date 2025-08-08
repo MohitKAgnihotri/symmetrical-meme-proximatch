@@ -3,10 +3,10 @@ package com.proxilocal.hyperlocal
 import android.Manifest
 import android.content.Context
 import android.location.Location
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.proxilocal.flags.FeatureFlags
 import com.proxilocal.ui.components.RadarTheme
 import com.proxilocal.ui.components.ThemeProvider
 import kotlinx.coroutines.Job
@@ -21,20 +21,19 @@ class MainViewModel : ViewModel() {
     private lateinit var bleScanner: BLEScanner
     private lateinit var locationHelper: LocationHelper
 
-    // 1. CHANGE HOW MATCHES ARE STORED
-    // Instead of a simple list, we use a map where the key is the device ID.
-    // This makes it easy to update a device's timestamp when it's seen again.
-    private val _matchResultsMap = MutableStateFlow<Map<String, MatchResult>>(emptyMap())
+    // ── Phase 0 kill‑switch (unchanged) ─────────────────────────
+    private val _interactiveRadarEnabled = MutableStateFlow(FeatureFlags.enableInteractiveRadar)
+    val interactiveRadarEnabled: StateFlow<Boolean> = _interactiveRadarEnabled.asStateFlow()
+    fun setInteractiveRadarEnabled(enabled: Boolean) {
+        FeatureFlags.enableInteractiveRadar = enabled
+        _interactiveRadarEnabled.value = enabled
+    }
 
-    // The UI will still observe a simple list, which we derive from our map.
-    // We also sort the list here for a better user experience.
+    // ── Match state (unchanged data shape) ──────────────────────
+    private val _matchResultsMap = MutableStateFlow<Map<String, MatchResult>>(emptyMap())
     val matchResults: StateFlow<List<MatchResult>> = _matchResultsMap
-        .map { it.values.toList().sortedByDescending { match -> match.matchPercentage } }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+        .map { it.values.toList().sortedByDescending { m -> m.matchPercentage } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _selectedTheme = MutableStateFlow(ThemeProvider.NeonTech)
     val selectedTheme: StateFlow<RadarTheme> = _selectedTheme
@@ -52,8 +51,15 @@ class MainViewModel : ViewModel() {
     val locationError: StateFlow<String?> = _locationError
 
     private var lastZoomLocation: Location? = null
-    // 2. ADD A JOB FOR THE CLEANUP TASK
     private var cleanupJob: Job? = null
+
+    // ── NEW: Smooth the RSSI so dots don’t wobble ───────────────
+    // Exponential moving average per peer
+    private val smoothedRssi: MutableMap<String, Float> = mutableMapOf()
+    private val rssiAlpha = 0.25f // 25% new, 75% history (tune between 0.2–0.4)
+
+    // ── NEW: Make disappearance less trigger‑happy ──────────────
+    private val TIMEOUT_MS = 5_000L  // was 1_000; give scanner time to breathe
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun start(context: Context) {
@@ -61,26 +67,27 @@ class MainViewModel : ViewModel() {
         if (!::bleScanner.isInitialized) {
             bleScanner = BLEScanner(
                 context = context,
-                // 3. UPDATE THE onMatchFound LAMBDA
-                // This now adds or updates an entry in our map.
-                onMatchFound = { match: MatchResult ->
+                onMatchFound = { incoming: MatchResult ->
+                    // Smooth RSSI
+                    val prev = smoothedRssi[incoming.id] ?: incoming.distanceRssi.toFloat()
+                    val smoothed = (rssiAlpha * incoming.distanceRssi + (1f - rssiAlpha) * prev)
+                    smoothedRssi[incoming.id] = smoothed
+
                     val currentMap = _matchResultsMap.value.toMutableMap()
-                    currentMap[match.id] = match
+                    // Rebuild with smoothed RSSI but keep everything else verbatim
+                    currentMap[incoming.id] = incoming.copy(
+                        distanceRssi = smoothed.toInt(),
+                        lastSeen = System.currentTimeMillis()
+                    )
                     _matchResultsMap.value = currentMap
                 },
                 onPermissionMissing = { permissions ->
-                    viewModelScope.launch {
-                        _permissionError.value = permissions
-                    }
+                    viewModelScope.launch { _permissionError.value = permissions }
                 }
             )
         }
 
         val profile = CriteriaManager.getUserProfile(context)
-        if (profile == null) {
-            return
-        }
-
         val criteriaToAdvertise = CriteriaManager.encodeCriteria(profile.myCriteria)
         val senderId = UserIdManager.getOrGenerateId(context)
         val genderToAdvertise = profile.gender
@@ -88,7 +95,6 @@ class MainViewModel : ViewModel() {
         bleAdvertiser.startAdvertising(criteriaToAdvertise, senderId, genderToAdvertise)
         bleScanner.startScanning()
         _isSweeping.value = true
-        // 4. START THE CLEANUP JOB WHEN SCANNING STARTS
         startCleanupJob()
         fetchUserLocation(context)
     }
@@ -97,34 +103,22 @@ class MainViewModel : ViewModel() {
     fun stop() {
         if (::bleAdvertiser.isInitialized) bleAdvertiser.stopAdvertising()
         if (::bleScanner.isInitialized) bleScanner.stopScanning()
-
-        // 5. STOP THE CLEANUP JOB AND CLEAR THE LIST
         cleanupJob?.cancel()
         _matchResultsMap.value = emptyMap()
         _isSweeping.value = false
     }
 
-    // 6. ADD THE NEW CLEANUP FUNCTION
-    /**
-     * Periodically checks the match list and removes any that haven't been seen
-     * within the timeout period.
-     */
     private fun startCleanupJob() {
-        cleanupJob?.cancel() // Cancel any existing job
+        cleanupJob?.cancel()
         cleanupJob = viewModelScope.launch {
             while (isActive) {
-                delay(1000) // Run this check every second
+                delay(1000)
                 val now = System.currentTimeMillis()
-                val timeout = 1000 // 1 second timeout
-
-                // Filter the map, keeping only the matches seen within the last second
-                val updatedMap = _matchResultsMap.value.filterValues { match ->
-                    (now - match.lastSeen) < timeout
+                val updated = _matchResultsMap.value.filterValues { match ->
+                    (now - match.lastSeen) < TIMEOUT_MS
                 }
-
-                // Only update the state if there was a change, to avoid unnecessary recompositions
-                if (updatedMap.size != _matchResultsMap.value.size) {
-                    _matchResultsMap.value = updatedMap
+                if (updated.size != _matchResultsMap.value.size) {
+                    _matchResultsMap.value = updated
                 }
             }
         }
@@ -133,7 +127,6 @@ class MainViewModel : ViewModel() {
     @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
     fun fetchUserLocation(context: Context) {
         if (!::locationHelper.isInitialized) locationHelper = LocationHelper(context)
-
         locationHelper.fetchCurrentLocation(
             onLocationFetched = { newLocation ->
                 val lastLocation = lastZoomLocation
@@ -143,11 +136,7 @@ class MainViewModel : ViewModel() {
                     _locationError.value = null
                 }
             },
-            onLocationError = { error ->
-                viewModelScope.launch {
-                    _locationError.value = error
-                }
-            }
+            onLocationError = { error -> viewModelScope.launch { _locationError.value = error } }
         )
     }
 
@@ -156,11 +145,6 @@ class MainViewModel : ViewModel() {
         launcher.launch(permissions.toTypedArray())
     }
 
-    fun clearPermissionError() {
-        _permissionError.value = null
-    }
-
-    fun clearLocationError() {
-        _locationError.value = null
-    }
+    fun clearPermissionError() { _permissionError.value = null }
+    fun clearLocationError() { _locationError.value = null }
 }

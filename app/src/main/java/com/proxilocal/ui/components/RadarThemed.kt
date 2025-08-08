@@ -13,17 +13,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.proxilocal.hyperlocal.Gender
 import com.proxilocal.hyperlocal.MatchResult
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
-// --- DATA CLASSES AND THEME PROVIDER (Unchanged) ---
+// --- DATA CLASSES AND THEME PROVIDER (unchanged) ---
 enum class RingStyle { SOLID, DASHED, GRADIENT }
 
 data class RadarTheme(
@@ -72,6 +71,8 @@ fun ThemedRadarCanvas(
     onPingCompleted: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val dotRadiusPx = with(LocalDensity.current) { theme.dotRadiusDp.toPx() }
     BoxWithConstraints(modifier = modifier) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
@@ -84,7 +85,6 @@ fun ThemedRadarCanvas(
             infiniteTransition.animateFloat(
                 initialValue = 0f,
                 targetValue = 360f,
-                // FIX 1: Use named arguments in tween
                 animationSpec = infiniteRepeatable(
                     animation = tween(durationMillis = 3000, easing = LinearEasing),
                     repeatMode = RepeatMode.Restart
@@ -98,7 +98,6 @@ fun ThemedRadarCanvas(
             infiniteTransition.animateFloat(
                 initialValue = 0.1f,
                 targetValue = 0.4f,
-                // FIX 2: Use named arguments in tween
                 animationSpec = infiniteRepeatable(
                     animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
                     repeatMode = RepeatMode.Reverse
@@ -110,6 +109,7 @@ fun ThemedRadarCanvas(
 
         val sweepColor = if (isSweeping) theme.sweepColor else Color.Transparent
 
+        // Background grid + sweep
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (isSweeping) {
                 (1..theme.circleCount).forEach { i ->
@@ -136,6 +136,11 @@ fun ThemedRadarCanvas(
             )
         }
 
+        // --- NEW: compute stable, collision‑free positions once per frame
+        val positions = remember(matches, w, h, dotRadiusPx) {
+            DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
+        }
+
         Layout(
             content = {
                 matches.forEach { match ->
@@ -152,15 +157,13 @@ fun ThemedRadarCanvas(
             layout(constraints.maxWidth, constraints.maxHeight) {
                 placeables.forEachIndexed { index, placeable ->
                     val match = matches[index]
-                    val normalizedDistance = ((match.distanceRssi - -90f) / (-30f - -90f)).coerceIn(0f, 1f)
-                    val radius = maxRadius * (1 - normalizedDistance)
-                    val angleRad = (match.id.hashCode() % 360) * (Math.PI / 180)
-                    val x = center.x + (radius * cos(angleRad)).toFloat()
-                    val y = center.y + (radius * sin(angleRad)).toFloat()
-                    placeable.placeRelative(
-                        x = (x - placeable.width / 2).toInt(),
-                        y = (y - placeable.height / 2).toInt()
-                    )
+                    val pos = positions[match.id]
+                    if (pos != null) {
+                        placeable.placeRelative(
+                            x = (pos.x - placeable.width / 2).toInt(),
+                            y = (pos.y - placeable.height / 2).toInt()
+                        )
+                    }
                 }
             }
         }
@@ -202,7 +205,6 @@ private fun MatchDot(
         }
     }
 
-    // --- FIX 3: Moved the infinite transition for the glow OUT of the Canvas block ---
     val infiniteTransition = rememberInfiniteTransition(label = "DotPulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.1f,
@@ -227,7 +229,6 @@ private fun MatchDot(
         }
 
         if (match.matchPercentage > 85) {
-            // --- FIX 4: Use the pulseAlpha value that was defined in the correct composable scope ---
             val baseGlowColor = when (match.gender) {
                 Gender.MALE -> theme.maleColor
                 Gender.FEMALE -> theme.femaleColor
