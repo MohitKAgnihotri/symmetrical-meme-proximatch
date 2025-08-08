@@ -12,23 +12,37 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.proxilocal.hyperlocal.MatchUiState
 
+/**
+ * Radar canvas with hit-testing for:
+ *  - Dot taps (existing)
+ *  - Ring taps (Phase 6): when canTapRings(id) is true, expand hit-box and call onRingsTap(id)
+ */
 @Composable
 fun RadarCanvas(
     theme: RadarTheme,
-    matches: List<MatchUiState>,            // CHANGED: UI state
+    matches: List<MatchUiState>,                  // UI state (used by renderer and hit-testing)
     isSweeping: Boolean,
-    onDotTapped: (MatchUiState) -> Unit,    // CHANGED: return UI state
+    onDotTapped: (MatchUiState) -> Unit,          // existing behavior: open like dialog
+    // NEW (Phase 6): enable “tap the rings to connect” when true for this id
+    canTapRings: (id: String) -> Boolean,
+    onRingsTap: (id: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    // Make taps a bit forgiving; tune as needed during testing
-    val dotRadiusPx = with(density) { theme.dotRadiusDp.toPx() * 1.4f }
+
+    // Keep a "forgiving" dot radius for hit-testing
+    val baseDotR = with(density) { theme.dotRadiusDp.toPx() }
+    val dotHitR = baseDotR * 1.4f
+
+    // Corona for ring taps (roughly matches the visuals in ThemedRadarCanvas)
+    val ringInnerR = baseDotR * 1.6f      // just outside the dot
+    val ringOuterR = baseDotR * 7.0f      // around the outer animated ring
 
     var pingingMatchId by remember { mutableStateOf<String?>(null) }
 
     Box(
-        modifier = modifier.pointerInput(matches) {
+        modifier = modifier.pointerInput(matches, canTapRings) {
             awaitPointerEventScope {
                 while (true) {
                     // Read at the Initial pass so children don't steal it first
@@ -41,37 +55,51 @@ fun RadarCanvas(
                     val w = size.width.toFloat()
                     val h = size.height.toFloat()
                     val positions = DotLayout.computePositions(
-                        context,
-                        matches.map { it.match }, // compute with raw data
-                        w, h, dotRadiusPx
+                        context = context,
+                        matches = matches.map { it.match }, // layout uses raw MatchResult
+                        w = w,
+                        h = h,
+                        dotRadiusPx = baseDotR
                     )
 
-                    // Hit-test
-                    val hit = matches.firstOrNull { ui ->
-                        val p = positions[ui.match.id]
-                        if (p == null) false
-                        else {
-                            val dx = down.position.x - p.x
-                            val dy = down.position.y - p.y
-                            dx * dx + dy * dy <= dotRadiusPx * dotRadiusPx
-                        }
+                    // 1) Dot hit-test first (highest priority)
+                    val dotHit = matches.firstOrNull { ui ->
+                        val p = positions[ui.match.id] ?: return@firstOrNull false
+                        val dx = down.position.x - p.x
+                        val dy = down.position.y - p.y
+                        dx * dx + dy * dy <= dotHitR * dotHitR
                     }
 
-                    if (hit != null) {
-                        // We handled it: consume + show feedback
+                    if (dotHit != null) {
                         down.consume()
-                        android.util.Log.d("RadarCanvas", "HIT -> ${hit.match.id}")
-                        pingingMatchId = hit.match.id
-                        onDotTapped(hit)
+                        android.util.Log.d("RadarCanvas", "HIT dot -> ${dotHit.match.id}")
+                        pingingMatchId = dotHit.match.id
+                        onDotTapped(dotHit)
                         android.widget.Toast
-                            .makeText(context, "Tapped ${hit.match.id.take(6)}…", android.widget.Toast.LENGTH_SHORT)
+                            .makeText(context, "Tapped ${dotHit.match.id.take(6)}…", android.widget.Toast.LENGTH_SHORT)
                             .show()
-                        // finish the gesture sequence
+                        waitForUpOrCancellation()
+                        continue
+                    }
+
+                    // 2) Phase 6: Rings corona hit-test (only if canTapRings says it's tappable)
+                    val ringsHit = matches.firstOrNull { ui ->
+                        if (!canTapRings(ui.match.id)) return@firstOrNull false
+                        val p = positions[ui.match.id] ?: return@firstOrNull false
+                        val dx = down.position.x - p.x
+                        val dy = down.position.y - p.y
+                        val d2 = dx * dx + dy * dy
+                        d2 >= (ringInnerR * ringInnerR) && d2 <= (ringOuterR * ringOuterR)
+                    }
+
+                    if (ringsHit != null) {
+                        down.consume()
+                        android.util.Log.d("RadarCanvas", "HIT rings -> ${ringsHit.match.id}")
+                        onRingsTap(ringsHit.match.id)
                         waitForUpOrCancellation()
                     } else {
-                        // Do NOT consume; let underlying UI get the tap
-                        android.util.Log.d("RadarCanvas", "MISS (no dot)")
-                        // Still complete the sequence so we keep the loop timing sane
+                        android.util.Log.d("RadarCanvas", "MISS (no dot/rings)")
+                        // Don’t consume; just finish the gesture so the loop continues cleanly
                         waitForUpOrCancellation()
                     }
                 }
@@ -80,7 +108,7 @@ fun RadarCanvas(
     ) {
         ThemedRadarCanvas(
             theme = theme,
-            matches = matches,                  // pass UI state list through
+            matches = matches,                  // pass UI list through to renderer
             isSweeping = isSweeping,
             pingingMatchId = pingingMatchId,
             onPingCompleted = { pingingMatchId = null },

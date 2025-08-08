@@ -48,14 +48,28 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     val theme by viewModel.selectedTheme.collectAsState()
-    val matchesUi by viewModel.matchUiList.collectAsState()   // CHANGED: UI state for radar
-    val matchesRaw by viewModel.matchResults.collectAsState() // keep raw list for textual list
+    val matchesUi by viewModel.matchUiList.collectAsState()   // UI state for radar
+    val matchesRaw by viewModel.matchResults.collectAsState() // raw list for textual list
     val userLocation by viewModel.userLocation.collectAsState()
     val isSweeping by viewModel.isSweeping.collectAsState()
     val vmPermissionError by viewModel.permissionError.collectAsState()
 
     var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
     var showPermissionRationale by remember { mutableStateOf(false) }
+
+    /* ───────────── Phase 6 events: toasts / navigation ───────────── */
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { ev ->
+            when (ev) {
+                is MainViewModel.UiEvent.ToastMsg ->
+                    Toast.makeText(context, ev.msg, Toast.LENGTH_SHORT).show()
+                is MainViewModel.UiEvent.NavigateToChat -> {
+                    // TODO: wire to NavController if/when you have a chat route
+                    // navController.navigate("chat/${ev.peerId}")
+                }
+            }
+        }
+    }
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -166,7 +180,7 @@ fun MainScreen(
                     )
                 } else if (matchesRaw.isNotEmpty()) {
                     MatchList(
-                        matches = matchesRaw,                    // still uses raw list
+                        matches = matchesRaw,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
@@ -176,16 +190,17 @@ fun MainScreen(
             }
         }
 
-        // 3) Centered radar overlay — use UI state list
+        // 3) Centered radar overlay — pass rings callbacks for Phase 6
         CenteredRadarOverlay(
             theme = theme,
             matches = matchesUi,
             isSweeping = isSweeping,
             sideMinDp = 240.dp,
-            sideScale = 0.95f
-        ) { tappedUi ->
-            selectedMatch = tappedUi.match
-        }
+            sideScale = 0.95f,
+            onDotTapped = { tappedUi -> selectedMatch = tappedUi.match },
+            canTapRings = viewModel::isMutual,
+            onRingsTap = { id -> viewModel.onRingsTapped(id) }
+        )
 
         // 4) Dialog above everything
         selectedMatch?.let { match ->
@@ -207,13 +222,15 @@ fun MainScreen(
 @Composable
 private fun CenteredRadarOverlay(
     theme: com.proxilocal.ui.components.RadarTheme,
-    matches: List<MatchUiState>,          // CHANGED
+    matches: List<MatchUiState>,
     isSweeping: Boolean,
     sideMinDp: Dp,
     sideScale: Float = 0.8f, // 0..1 of the screen's short side
-    onDotTapped: (MatchUiState) -> Unit   // CHANGED
+    onDotTapped: (MatchUiState) -> Unit,
+    // NEW for Phase 6:
+    canTapRings: (String) -> Boolean,
+    onRingsTap: (String) -> Unit
 ) {
-    // A centered, touch-active square overlay sized to the screen's short side.
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -224,14 +241,17 @@ private fun CenteredRadarOverlay(
 
             Box(
                 modifier = Modifier
-                    .size(side)          // square
-                    .aspectRatio(1f)     // belt & suspenders
+                    .size(side)
+                    .aspectRatio(1f)
             ) {
                 RadarCanvas(
                     theme = theme,
                     matches = matches,
                     isSweeping = isSweeping,
                     onDotTapped = onDotTapped,
+                    // Phase 6: these two enable ring-tap connect
+                    canTapRings = canTapRings,
+                    onRingsTap = onRingsTap,
                     modifier = Modifier.fillMaxSize()
                 )
             }

@@ -3,6 +3,7 @@ package com.proxilocal.hyperlocal
 import android.Manifest
 import android.content.Context
 import android.location.Location
+import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +12,7 @@ import com.proxilocal.ui.components.RadarTheme
 import com.proxilocal.ui.components.ThemeProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,30 +31,22 @@ class MainViewModel : ViewModel() {
     // Map of id -> MatchResult (raw)
     private val _matchResultsMap = MutableStateFlow<Map<String, MatchResult>>(emptyMap())
 
-    // NEW: in-memory per-id UI state (status/likeType)
+    // In-memory per-id UI state (status/likeType)
     private val matchUi = mutableMapOf<String, MatchUiState>()
 
-    // UI observes sorted raw list (kept for existing components like MatchList)
+    // UI observes sorted raw list (for list)
     val matchResults: StateFlow<List<MatchResult>> = _matchResultsMap
         .map { it.values.toList().sortedByDescending { m -> m.matchPercentage } }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // NEW: UI observes wrapped states for the radar
+    // UI observes wrapped states (for radar)
     val matchUiList: StateFlow<List<MatchUiState>> = _matchResultsMap
         .map { map ->
             map.values
                 .map { m -> matchUi[m.id]?.copy(match = m) ?: MatchUiState(match = m) }
                 .sortedByDescending { it.match.matchPercentage }
         }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _selectedTheme = MutableStateFlow(ThemeProvider.NeonTech)
     val selectedTheme: StateFlow<RadarTheme> = _selectedTheme
@@ -75,6 +69,13 @@ class MainViewModel : ViewModel() {
     // RSSI smoothing (EMA)
     private val smoothedRssi = mutableMapOf<String, Float>()
     private val rssiAlpha = 0.30f // 0..1, higher = more reactive
+
+    /* ───────────── One-shot UI events (toasts / navigation) ───────────── */
+    sealed class UiEvent {
+        data class ToastMsg(val msg: String) : UiEvent()
+        data class NavigateToChat(val peerId: String) : UiEvent()
+    }
+    val events = MutableSharedFlow<UiEvent>()
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun start(context: Context) {
@@ -144,8 +145,7 @@ class MainViewModel : ViewModel() {
                 if (updated.size != _matchResultsMap.value.size) {
                     _matchResultsMap.value = updated
                     smoothedRssi.keys.retainAll(updated.keys)
-                    // prune UI state for missing ids
-                    matchUi.keys.retainAll(updated.keys)
+                    matchUi.keys.retainAll(updated.keys) // prune UI state
                 }
             }
         }
@@ -178,10 +178,6 @@ class MainViewModel : ViewModel() {
 
     /* ───── Phase 4/5: one‑sided "send like" + mutual detection ───── */
 
-    /**
-     * Send a LIKE/SUPER_LIKE to a target whose id is our UI hex string.
-     * Does not perform any mutual detection (inbound path handles that).
-     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
     fun sendLikeTo(targetIdHex: String, type: LikeType) {
         if (!::bleAdvertiser.isInitialized || !::appContext.isInitialized) return
@@ -201,15 +197,13 @@ class MainViewModel : ViewModel() {
             // nudge observers
             _matchResultsMap.value = _matchResultsMap.value.toMap()
         } catch (t: Throwable) {
-            // Be noisy in logs but don't crash UI
-            android.util.Log.e("MainViewModel", "sendLikeTo failed for $targetIdHex", t)
+            Log.e("MainViewModel", "sendLikeTo failed for $targetIdHex", t)
         }
     }
 
     // Inbound LIKE/SUPER_LIKE targeted to me
     private fun handleInboundLike(senderIdHex: String, @Suppress("UNUSED_PARAMETER") opcode: Byte) {
         if (!FeatureFlags.enableMutualTransition) return
-        // Did we already like them?
         val weLiked = InterestManager.hasSentInterest(appContext, senderIdHex)
         if (weLiked) {
             markMutual(senderIdHex)
@@ -219,12 +213,49 @@ class MainViewModel : ViewModel() {
     private fun markMutual(peerId: String) {
         val base = _matchResultsMap.value[peerId] ?: return
         val cur = matchUi[peerId]
-        matchUi[peerId] = (cur ?: MatchUiState(base)).copy(
-            status = MatchStatus.MUTUAL
-        )
-        // Notify observers
+        matchUi[peerId] = (cur ?: MatchUiState(base)).copy(status = MatchStatus.MUTUAL)
         _matchResultsMap.value = _matchResultsMap.value.toMap()
+        Log.d("MainViewModel", "Marked MUTUAL with $peerId")
     }
+
+    /* ───── Phase 6: rings tap → connect (stub) ───── */
+
+    fun isMutual(id: String): Boolean = (matchUi[id]?.status == MatchStatus.MUTUAL)
+    fun isConnected(id: String): Boolean = (matchUi[id]?.status == MatchStatus.CONNECTED)
+
+    fun onRingsTapped(peerId: String) {
+        if (!FeatureFlags.enableConnectFromRings) {
+            viewModelScope.launch { events.emit(UiEvent.ToastMsg("Rings are visual only (disabled).")) }
+            return
+        }
+        if (!isMutual(peerId)) {
+            viewModelScope.launch { events.emit(UiEvent.ToastMsg("Not mutual yet.")) }
+            return
+        }
+        viewModelScope.launch {
+            events.emit(UiEvent.ToastMsg("Connecting to ${peerId.take(6)}…"))
+            val ok = SecureConnector.startHandshake(peerId)
+            if (ok) {
+                val base = _matchResultsMap.value[peerId] ?: return@launch
+                val cur = matchUi[peerId]
+                matchUi[peerId] = (cur ?: MatchUiState(base)).copy(status = MatchStatus.CONNECTED)
+                _matchResultsMap.value = _matchResultsMap.value.toMap()
+                events.emit(UiEvent.ToastMsg("Connected with ${peerId.take(6)}"))
+                events.emit(UiEvent.NavigateToChat(peerId))
+            } else {
+                events.emit(UiEvent.ToastMsg("Connect failed. Try again."))
+            }
+        }
+    }
+
+    private object SecureConnector {
+        suspend fun startHandshake(@Suppress("UNUSED_PARAMETER") peerId: String): Boolean {
+            delay(600) // pretend to do key exchange
+            return true
+        }
+    }
+
+    /* ───── Utils ───── */
 
     private fun hexToBytes(hex: String): ByteArray {
         val clean = hex.lowercase().trim()

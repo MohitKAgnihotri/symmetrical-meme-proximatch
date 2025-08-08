@@ -17,4 +17,7 @@ object FeatureFlags {
     // NEW: When off, inbound LIKEs won’t flip status to MUTUAL.
     @Volatile
     var enableMutualTransition: Boolean = true
+
+    // NEW: Phase 6 — tap rings to attempt a secure connect (stubbed)
+    @Volatile var enableConnectFromRings: Boolean = true
 }
