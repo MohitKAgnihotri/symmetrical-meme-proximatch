@@ -60,6 +60,7 @@ object ThemeProvider {
     )
 }
 
+/** Pure visual radar renderer. Touch handling belongs to a parent container. */
 @Composable
 fun ThemedRadarCanvas(
     theme: RadarTheme,
@@ -70,15 +71,16 @@ fun ThemedRadarCanvas(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val dotRadiusPx = with(LocalDensity.current) { theme.dotRadiusDp.toPx() }
+    val density = LocalDensity.current
+    val dotRadiusPx = with(density) { theme.dotRadiusDp.toPx() }
+
     BoxWithConstraints(modifier = modifier) {
-        val w = constraints.maxWidth.toFloat()
-        val h = constraints.maxHeight.toFloat()
-        val center = Offset(w / 2, h / 2)
+        val w = with(density) { maxWidth.toPx() }
+        val h = with(density) { maxHeight.toPx() }
+        val center = Offset(w / 2f, h / 2f)
         val maxRadius = min(w, h) / 2f
 
         val infiniteTransition = rememberInfiniteTransition(label = "RadarAnimations")
-
         val sweepAngle by if (isSweeping) {
             infiniteTransition.animateFloat(
                 initialValue = 0f,
@@ -86,11 +88,10 @@ fun ThemedRadarCanvas(
                 animationSpec = infiniteRepeatable(
                     animation = tween(durationMillis = 3000, easing = LinearEasing),
                     repeatMode = RepeatMode.Restart
-                ), label = "SweepAngle"
+                ),
+                label = "SweepAngle"
             )
-        } else {
-            remember { mutableFloatStateOf(0f) }
-        }
+        } else remember { mutableFloatStateOf(0f) }
 
         val gridPulse by if (isSweeping) {
             infiniteTransition.animateFloat(
@@ -99,14 +100,14 @@ fun ThemedRadarCanvas(
                 animationSpec = infiniteRepeatable(
                     animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
                     repeatMode = RepeatMode.Reverse
-                ), label = "GridPulse"
+                ),
+                label = "GridPulse"
             )
-        } else {
-            remember { mutableFloatStateOf(0.1f) }
-        }
+        } else remember { mutableFloatStateOf(0.1f) }
 
         val sweepColor = if (isSweeping) theme.sweepColor else Color.Transparent
 
+        // Background rings + sweep
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (isSweeping) {
                 (1..theme.circleCount).forEach { i ->
@@ -129,16 +130,16 @@ fun ThemedRadarCanvas(
                 ),
                 startAngle = sweepAngle,
                 sweepAngle = theme.sweepWidth,
-                useCenter = true,
+                useCenter = true
             )
         }
 
-        // POSITIONS: compute once (with caching) and reuse
+        // Compute & cache dot positions once
         val positions = remember(matches, w, h, dotRadiusPx) {
             DotLayout.computePositions(context, matches, w, h, dotRadiusPx)
         }
 
-        // Ticker to drive fade-out alpha (updates ~4x/sec)
+        // Fade dots after they age out
         val now by produceState(System.currentTimeMillis()) {
             while (true) {
                 value = System.currentTimeMillis()
@@ -191,7 +192,7 @@ private fun MatchDot(
     match: MatchResult,
     isPinging: Boolean,
     onPingCompleted: () -> Unit,
-    alphaFactor: Float // NEW: overall alpha for fade-out
+    alphaFactor: Float
 ) {
     val dotRadiusPx = with(LocalDensity.current) { theme.dotRadiusDp.toPx() }
 
@@ -233,10 +234,11 @@ private fun MatchDot(
     )
 
     androidx.compose.foundation.Canvas(modifier = Modifier.size(theme.dotRadiusDp * 8)) {
-        if (alphaFactor <= 0f) return@Canvas // fully faded
+        if (alphaFactor <= 0f) return@Canvas
 
         val dotCenter = center
 
+        // Ping ripple
         if (pingTrigger || pingTransition.isRunning) {
             drawCircle(
                 color = theme.ringPrimary.copy(alpha = pingAlpha * alphaFactor),
@@ -246,12 +248,13 @@ private fun MatchDot(
             )
         }
 
+        // Glow for strong matches
         if (match.matchPercentage > 85) {
             val baseGlowColor = when (match.gender) {
-                Gender.MALE -> theme.maleColor
-                Gender.FEMALE -> theme.femaleColor
-                Gender.PRIVATE -> theme.privateColor
-                Gender.LGBTQ_PLUS -> theme.rainbowColors.first()
+                com.proxilocal.hyperlocal.Gender.MALE -> theme.maleColor
+                com.proxilocal.hyperlocal.Gender.FEMALE -> theme.femaleColor
+                com.proxilocal.hyperlocal.Gender.PRIVATE -> theme.privateColor
+                com.proxilocal.hyperlocal.Gender.LGBTQ_PLUS -> theme.rainbowColors.first()
             }
             val glowColor = lerp(baseGlowColor.copy(alpha = 0.4f), baseGlowColor, match.matchPercentage / 100f)
             drawCircle(
@@ -261,16 +264,17 @@ private fun MatchDot(
             )
         }
 
+        // Main dot
         val baseDotColor = when (match.gender) {
-            Gender.MALE -> theme.maleColor
-            Gender.FEMALE -> theme.femaleColor
-            Gender.PRIVATE -> theme.privateColor
-            Gender.LGBTQ_PLUS -> Color.Transparent
+            com.proxilocal.hyperlocal.Gender.MALE -> theme.maleColor
+            com.proxilocal.hyperlocal.Gender.FEMALE -> theme.femaleColor
+            com.proxilocal.hyperlocal.Gender.PRIVATE -> theme.privateColor
+            com.proxilocal.hyperlocal.Gender.LGBTQ_PLUS -> Color.Transparent
         }
         val paleColor = baseDotColor.copy(alpha = 0.4f * alphaFactor)
         val matchColor = lerp(paleColor, baseDotColor.copy(alpha = alphaFactor), match.matchPercentage / 100f)
 
-        if (match.gender == Gender.LGBTQ_PLUS) {
+        if (match.gender == com.proxilocal.hyperlocal.Gender.LGBTQ_PLUS) {
             drawCircle(
                 brush = Brush.sweepGradient(theme.rainbowColors, center = dotCenter),
                 center = dotCenter,

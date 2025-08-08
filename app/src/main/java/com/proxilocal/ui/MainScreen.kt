@@ -1,7 +1,6 @@
 package com.proxilocal.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -24,7 +23,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.firebase.auth.FirebaseUser
@@ -49,23 +47,35 @@ fun MainScreen(
     val matches by viewModel.matchResults.collectAsState()
     val userLocation by viewModel.userLocation.collectAsState()
     val isSweeping by viewModel.isSweeping.collectAsState()
+    val vmPermissionError by viewModel.permissionError.collectAsState()
+
     var selectedMatch by remember { mutableStateOf<MatchResult?>(null) }
     var showPermissionRationale by remember { mutableStateOf(false) }
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        Log.d(TAG, "Permissions result received: $permissions")
-        if (permissions.values.all { it }) {
-            Log.d(TAG, "All permissions GRANTED by user.")
-            Toast.makeText(context, "Permissions granted. Starting...", Toast.LENGTH_SHORT).show()
+    ) { results ->
+        Log.d(TAG, "Permissions result: $results")
+        val allGranted = results.values.all { it }
+        if (allGranted) {
+            Toast.makeText(context, "Permissions granted. Starting…", Toast.LENGTH_SHORT).show()
             viewModel.start(context)
         } else {
-            Log.w(TAG, "Some or all permissions DENIED by user.")
             showPermissionRationale = true
         }
     }
 
+    // Auto-request if VM reports missing permissions during start()
+    LaunchedEffect(vmPermissionError) {
+        val missing = vmPermissionError
+        if (!missing.isNullOrEmpty()) {
+            Log.d(TAG, "VM reported missing permissions: $missing")
+            permissionsLauncher.launch(missing.toTypedArray())
+            viewModel.clearPermissionError()
+        }
+    }
+
+    // Pre-fetch location if already granted
     LaunchedEffect(Unit) {
         if (checkBLEPermissions(context)) {
             viewModel.fetchUserLocation(context)
@@ -87,6 +97,7 @@ fun MainScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         MapBackground(userLocation = userLocation, modifier = Modifier.fillMaxSize())
 
+        // Radar beneath Scaffold so buttons & chrome remain clickable
         RadarCanvas(
             theme = theme,
             matches = matches,
@@ -108,7 +119,11 @@ fun MainScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                             IconButton(onClick = onLogout) {
-                                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White)
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Logout,
+                                    contentDescription = "Logout",
+                                    tint = Color.White
+                                )
                             }
                         } else {
                             IconButton(onClick = onGoToLogin) {
@@ -131,8 +146,7 @@ fun MainScreen(
                             Toast.makeText(context, "Scanning Started", Toast.LENGTH_SHORT).show()
                         } else {
                             Log.d(TAG, "Permissions NOT granted. Launching request.")
-                            val permissions = getRequiredPermissions()
-                            permissionsLauncher.launch(permissions)
+                            permissionsLauncher.launch(getRequiredPermissions())
                         }
                     },
                     onStopClicked = {
@@ -186,23 +200,13 @@ fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Permissions Required") },
         text = { Text("This app needs Bluetooth and Location permissions to find nearby users. Please grant them in the app settings.") },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("Open Settings")
-            }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
+        confirmButton = { Button(onClick = onConfirm) { Text("Open Settings") } },
+        dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
-// *** THIS IS THE CORRECTED FUNCTION ***
 private fun getRequiredPermissions(): Array<String> {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        // For Android 12 (API 31) and newer
         arrayOf(
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
@@ -210,19 +214,17 @@ private fun getRequiredPermissions(): Array<String> {
             Manifest.permission.ACCESS_FINE_LOCATION
         )
     } else {
-        // For Android 11 (API 30) and older
         arrayOf(
             Manifest.permission.BLUETOOTH,
             Manifest.permission.BLUETOOTH_ADMIN,
-            Manifest.permission.ACCESS_FINE_LOCATION
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
         )
     }
 }
 
-fun checkBLEPermissions(context: Context): Boolean {
-    val allPermissionsGranted = getRequiredPermissions().all { perm ->
+private fun checkBLEPermissions(context: Context): Boolean {
+    return getRequiredPermissions().all { perm ->
         ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
     }
-    Log.d(TAG, "checkBLEPermissions result: $allPermissionsGranted")
-    return allPermissionsGranted
 }

@@ -23,11 +23,12 @@ class MainViewModel : ViewModel() {
     private lateinit var bleAdvertiser: BLEAdvertiser
     private lateinit var bleScanner: BLEScanner
     private lateinit var locationHelper: LocationHelper
+    private lateinit var appContext: Context // keep for later sendLike calls
 
-    // Keep a map keyed by device id (hex) so repeated sightings update the same entry.
+    // Map of id -> MatchResult
     private val _matchResultsMap = MutableStateFlow<Map<String, MatchResult>>(emptyMap())
 
-    // The UI observes a sorted list derived from the map.
+    // UI observes sorted list
     val matchResults: StateFlow<List<MatchResult>> = _matchResultsMap
         .map { it.values.toList().sortedByDescending { m -> m.matchPercentage } }
         .stateIn(
@@ -58,14 +59,17 @@ class MainViewModel : ViewModel() {
     private val smoothedRssi = mutableMapOf<String, Float>()
     private val rssiAlpha = 0.30f // 0..1, higher = more reactive
 
+
+
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun start(context: Context) {
-        if (!::bleAdvertiser.isInitialized) bleAdvertiser = BLEAdvertiser(context)
+        appContext = context.applicationContext
+
+        if (!::bleAdvertiser.isInitialized) bleAdvertiser = BLEAdvertiser(appContext)
         if (!::bleScanner.isInitialized) {
             bleScanner = BLEScanner(
-                context = context,
+                context = appContext,
                 onMatchFound = { incoming: MatchResult ->
-                    // Smooth RSSI and refresh lastSeen
                     val prev = smoothedRssi[incoming.id] ?: incoming.distanceRssi.toFloat()
                     val smoothed = (rssiAlpha * incoming.distanceRssi) + ((1f - rssiAlpha) * prev)
                     smoothedRssi[incoming.id] = smoothed
@@ -84,9 +88,9 @@ class MainViewModel : ViewModel() {
         }
 
         // Load profile and start advertising + scanning
-        val profile = CriteriaManager.getUserProfile(context)
+        val profile = CriteriaManager.getUserProfile(appContext)
         val criteriaToAdvertise = CriteriaManager.encodeCriteria(profile.myCriteria) // 8 bytes
-        val senderIdBytes: ByteArray = UserIdManager.getOrGenerateId(context)       // 8 bytes
+        val senderIdBytes: ByteArray = UserIdManager.getOrGenerateId(appContext)   // 8 bytes
         val genderToAdvertise = profile.gender
 
         bleAdvertiser.startAdvertising(criteriaToAdvertise, senderIdBytes, genderToAdvertise)
@@ -94,7 +98,7 @@ class MainViewModel : ViewModel() {
 
         _isSweeping.value = true
         startCleanupJob()
-        fetchUserLocation(context)
+        fetchUserLocation(appContext)
     }
 
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE])
@@ -107,30 +111,24 @@ class MainViewModel : ViewModel() {
         _isSweeping.value = false
     }
 
-    /**
-     * Periodically remove matches that haven't been seen recently.
-     * Keep this short so dots "gracefully" disappear when a device leaves.
-     */
     private fun startCleanupJob() {
         cleanupJob?.cancel()
         cleanupJob = viewModelScope.launch {
             while (isActive) {
-                delay(1000) // run every second
+                delay(1000)
                 val now = System.currentTimeMillis()
-                val timeoutMs = 1000L // seen within the last second
+                val timeoutMs = 1000L
                 val updated = _matchResultsMap.value.filterValues { match ->
                     (now - match.lastSeen) < timeoutMs
                 }
                 if (updated.size != _matchResultsMap.value.size) {
                     _matchResultsMap.value = updated
-                    // also prune the rssi cache
                     smoothedRssi.keys.retainAll(updated.keys)
                 }
             }
         }
     }
 
-    @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
     fun fetchUserLocation(context: Context) {
         if (!::locationHelper.isInitialized) locationHelper = LocationHelper(context)
         locationHelper.fetchCurrentLocation(
@@ -155,4 +153,32 @@ class MainViewModel : ViewModel() {
 
     fun clearPermissionError() { _permissionError.value = null }
     fun clearLocationError() { _locationError.value = null }
+
+    /* ───── Phase 4: one‑sided "send like" wiring ───── */
+
+    /**
+     * Send a LIKE/SUPER_LIKE to a target whose id is our UI hex string.
+     * Does not perform any mutual detection (Phase 5 handles that).
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
+    fun sendLikeTo(targetIdHex: String, type: LikeType) {
+        if (!::bleAdvertiser.isInitialized || !::appContext.isInitialized) return
+        try {
+            val myId = UserIdManager.getOrGenerateId(appContext) // 8 bytes
+            val targetId = hexToBytes(targetIdHex)                // 8 bytes (from UI)
+            bleAdvertiser.sendLike(myId = myId, targetId = targetId, type = type)
+            android.util.Log.d("MainViewModel", "sendLikeTo -> $type $targetIdHex")
+        } catch (t: Throwable) {
+            // Be noisy in logs but don't crash UI
+            android.util.Log.e("MainViewModel", "sendLikeTo failed for $targetIdHex", t)
+        }
+    }
+
+    private fun hexToBytes(hex: String): ByteArray {
+        val clean = hex.lowercase().trim()
+        require(clean.length % 2 == 0) { "Invalid hex length" }
+        return ByteArray(clean.length / 2) { i ->
+            clean.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+        }
+    }
 }

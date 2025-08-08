@@ -11,5 +11,5 @@ package com.proxilocal.flags
 object FeatureFlags {
     // Flip to true only when you want to start testing interactions.
     @Volatile
-    var enableInteractiveRadar: Boolean = false
+    var enableInteractiveRadar: Boolean = true
 }
